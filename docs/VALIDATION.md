@@ -19,8 +19,11 @@ The exception is restricted to observed historical Bun engine-crash signatures. 
 | [Initial matrix](https://github.com/jbsiddall/pglite-singlefile-fs/actions/runs/37041731782) | All correctness tests passed; older Bun failed its sampled benchmark. [Raw matrix snapshot](benchmarks/initial-ci-matrix.json). |
 | [Flagged follow-up](https://github.com/jbsiddall/pglite-singlefile-fs/actions/runs/37043190555) | All correctness tests passed; disabling WASM OSR did not prevent a hosted Vitest crash. |
 | [Next default-settings run](https://github.com/jbsiddall/pglite-singlefile-fs/actions/runs/37044661943) | All correctness tests passed; older Bun sampled benchmark failed with a WASM callback out-of-bounds error. |
+| [Documentation follow-up](https://github.com/jbsiddall/pglite-singlefile-fs/actions/runs/37047017697) | All correctness tests passed; older Bun sampled worker setup failed with `RuntimeError: Aborted(). Build with -sASSERTIONS for more info.` No subsequent release success is implied. |
 
 The [successful flagged local experiment](benchmarks/bun12-linux-x64-wasm-osr-disabled.json) remains limited local evidence. It is not presented as a reliable fix or a substitute for the failed hosted runs.
+
+The follow-up worker-setup abort diagnostic and PGlite `abort` frame also reproduced on a native NodeFS control that imported the adapter module but did not instantiate SingleFileFS. That exact control is not a zero-adapter-import reproduction and does not isolate module-initialization effects. The [sanitized native-control evidence](benchmarks/historical-bun-native-abort.md) preserves the diagnostic and those limitations. Benchmark worker setup covers database creation, seeding, a checkpoint, and warm reads; its exact failing substage and cause remain unknown. The historical advisory policy includes this observed PGlite worker-setup abort signature; all verification failures and unknown errors remain blocking.
 
 ## Reproducible local measurements
 

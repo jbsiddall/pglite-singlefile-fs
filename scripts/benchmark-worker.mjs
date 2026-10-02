@@ -32,7 +32,7 @@ export async function initialize(options = {}) {
   await db.query('SELECT count(*)::int AS n,sum(amount)::text AS total FROM orders');
   await db.query('SELECT amount FROM orders WHERE id=$1', [1]);
   await settle();
-  return { runtime, platform: process.platform, arch: process.arch, cpu: cpus()[0]?.model, config, pageCacheMiB: { postgres: fs ? 98 : 100, sqlite: fs ? 2 : 0, adapterClean: 0 }, settings: (await db.query("SELECT name,setting FROM pg_settings WHERE name IN ('fsync','shared_buffers','synchronous_commit','full_page_writes') ORDER BY name")).rows };
+  return { runtime, runtimeFlags:process.env.JSC_useWasmOSR===undefined?{}:{JSC_useWasmOSR:process.env.JSC_useWasmOSR}, platform: process.platform, arch: process.arch, cpu: cpus()[0]?.model, config, pageCacheMiB: { postgres: fs ? 98 : 100, sqlite: fs ? 2 : 0, adapterClean: 0 }, settings: (await db.query("SELECT name,setting FROM pg_settings WHERE name IN ('fsync','shared_buffers','synchronous_commit','full_page_writes') ORDER BY name")).rows };
 }
 export async function runWorkload(name) {
   if (!workloads.includes(name)) throw new Error('Unknown workload: '+name);
@@ -74,6 +74,6 @@ if (process.argv[1]?.endsWith('benchmark-worker.mjs')) {
       const value=request.command==='initialize'?await initialize(request.options):request.command==='shutdown'?await shutdown():await runWorkload(request.workload);
       process.stdout.write(JSON.stringify({id:request.id,value})+'\n');
       if(request.command==='shutdown')break;
-    }catch(error){process.stdout.write(JSON.stringify({id:request?.id,error:{message:error.message,stack:error.stack}})+'\n');process.exitCode=1;break;}
+    }catch(error){process.stdout.write(JSON.stringify({id:request?.id,error:{message:error.message,stack:error.stack,command:request?.command,workload:request?.workload,backend:config?.backend,runtime}})+'\n');process.exitCode=1;break;}
   }
 }

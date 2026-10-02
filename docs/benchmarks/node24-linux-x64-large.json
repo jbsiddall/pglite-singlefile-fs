@@ -1,0 +1,549 @@
+{
+  "timestamp": "2026-10-02T17:37:33.881Z",
+  "repeats": 3,
+  "environments": {
+    "nodefs": {
+      "runtime": {
+        "name": "node",
+        "version": "v24.21.0"
+      },
+      "platform": "linux",
+      "arch": "x64",
+      "cpu": "AMD EPYC 9V74 80-Core Processor",
+      "settings": [
+        {
+          "name": "fsync",
+          "setting": "off"
+        },
+        {
+          "name": "shared_buffers",
+          "setting": "12800"
+        },
+        {
+          "name": "work_mem",
+          "setting": "32768"
+        }
+      ]
+    },
+    "singlefile": {
+      "runtime": {
+        "name": "node",
+        "version": "v24.21.0"
+      },
+      "platform": "linux",
+      "arch": "x64",
+      "cpu": "AMD EPYC 9V74 80-Core Processor",
+      "settings": [
+        {
+          "name": "fsync",
+          "setting": "off"
+        },
+        {
+          "name": "shared_buffers",
+          "setting": "12544"
+        },
+        {
+          "name": "work_mem",
+          "setting": "32768"
+        }
+      ]
+    }
+  },
+  "summary": [
+    {
+      "phase": "joinWithoutIndex",
+      "nodefsMs": 99.5183290000059,
+      "singlefileMs": 159.25584099999833,
+      "ratio": 1.6002664293126232
+    },
+    {
+      "phase": "joinWithIndex",
+      "nodefsMs": 0.5349149999965448,
+      "singlefileMs": 0.5494170000019949,
+      "ratio": 1.0271108493976497
+    }
+  ],
+  "records": [
+    {
+      "backend": "nodefs",
+      "payloadHash": "a68aeb01113bdd88c2006dca5885a5c131d914fdd89d48a62a6573b6b43c16b7",
+      "targetBytes": 5368709120,
+      "rows": 960000,
+      "relationBytes": 5375270912,
+      "loadMs": 53011.851997000005,
+      "indexMs": 696.0562470000004,
+      "bytesBeforeIndex": 6472097885,
+      "imageBeforeIndex": null,
+      "closedBytes": 6478979110,
+      "samples": [
+        {
+          "phase": "joinWithoutIndex",
+          "elapsedMs": 103.78321300000243,
+          "result": {
+            "n": "96",
+            "total": "3936"
+          },
+          "excludedWarmup": true
+        },
+        {
+          "phase": "joinWithoutIndex",
+          "elapsedMs": 104.72841499999777,
+          "result": {
+            "n": "96",
+            "total": "3936"
+          },
+          "excludedWarmup": false
+        },
+        {
+          "phase": "joinWithoutIndex",
+          "elapsedMs": 99.0387069999997,
+          "result": {
+            "n": "96",
+            "total": "3936"
+          },
+          "excludedWarmup": false
+        },
+        {
+          "phase": "joinWithoutIndex",
+          "elapsedMs": 99.5183290000059,
+          "result": {
+            "n": "96",
+            "total": "3936"
+          },
+          "excludedWarmup": false
+        },
+        {
+          "phase": "joinWithIndex",
+          "elapsedMs": 1.4513630000001285,
+          "result": {
+            "n": "96",
+            "total": "3936"
+          },
+          "excludedWarmup": true
+        },
+        {
+          "phase": "joinWithIndex",
+          "elapsedMs": 0.6379989999986719,
+          "result": {
+            "n": "96",
+            "total": "3936"
+          },
+          "excludedWarmup": false
+        },
+        {
+          "phase": "joinWithIndex",
+          "elapsedMs": 0.5161259999949834,
+          "result": {
+            "n": "96",
+            "total": "3936"
+          },
+          "excludedWarmup": false
+        },
+        {
+          "phase": "joinWithIndex",
+          "elapsedMs": 0.5349149999965448,
+          "result": {
+            "n": "96",
+            "total": "3936"
+          },
+          "excludedWarmup": false
+        }
+      ],
+      "planWithout": [
+        {
+          "QUERY PLAN": [
+            {
+              "Plan": {
+                "Node Type": "Aggregate",
+                "Strategy": "Plain",
+                "Partial Mode": "Simple",
+                "Parallel Aware": false,
+                "Async Capable": false,
+                "Startup Cost": 20009.74,
+                "Total Cost": 20009.76,
+                "Plan Rows": 1,
+                "Plan Width": 64,
+                "Disabled": false,
+                "Plans": [
+                  {
+                    "Node Type": "Nested Loop",
+                    "Parent Relationship": "Outer",
+                    "Parallel Aware": false,
+                    "Async Capable": false,
+                    "Join Type": "Inner",
+                    "Startup Cost": 0.29,
+                    "Total Cost": 20009.26,
+                    "Plan Rows": 96,
+                    "Plan Width": 4,
+                    "Disabled": false,
+                    "Inner Unique": false,
+                    "Plans": [
+                      {
+                        "Node Type": "Index Only Scan",
+                        "Parent Relationship": "Outer",
+                        "Parallel Aware": false,
+                        "Async Capable": false,
+                        "Scan Direction": "Forward",
+                        "Index Name": "customers_pkey",
+                        "Relation Name": "customers",
+                        "Alias": "c",
+                        "Startup Cost": 0.29,
+                        "Total Cost": 8.3,
+                        "Plan Rows": 1,
+                        "Plan Width": 8,
+                        "Disabled": false,
+                        "Index Cond": "(id = '42'::bigint)"
+                      },
+                      {
+                        "Node Type": "Seq Scan",
+                        "Parent Relationship": "Inner",
+                        "Parallel Aware": false,
+                        "Async Capable": false,
+                        "Relation Name": "events",
+                        "Alias": "e",
+                        "Startup Cost": 0,
+                        "Total Cost": 20000,
+                        "Plan Rows": 96,
+                        "Plan Width": 12,
+                        "Disabled": false,
+                        "Filter": "(customer_id = '42'::bigint)"
+                      }
+                    ]
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ],
+      "planWith": [
+        {
+          "QUERY PLAN": [
+            {
+              "Plan": {
+                "Node Type": "Aggregate",
+                "Strategy": "Plain",
+                "Partial Mode": "Simple",
+                "Parallel Aware": false,
+                "Async Capable": false,
+                "Startup Cost": 368.56,
+                "Total Cost": 368.58,
+                "Plan Rows": 1,
+                "Plan Width": 64,
+                "Disabled": false,
+                "Plans": [
+                  {
+                    "Node Type": "Nested Loop",
+                    "Parent Relationship": "Outer",
+                    "Parallel Aware": false,
+                    "Async Capable": false,
+                    "Join Type": "Inner",
+                    "Startup Cost": 5.45,
+                    "Total Cost": 368.08,
+                    "Plan Rows": 96,
+                    "Plan Width": 4,
+                    "Disabled": false,
+                    "Inner Unique": false,
+                    "Plans": [
+                      {
+                        "Node Type": "Index Only Scan",
+                        "Parent Relationship": "Outer",
+                        "Parallel Aware": false,
+                        "Async Capable": false,
+                        "Scan Direction": "Forward",
+                        "Index Name": "customers_pkey",
+                        "Relation Name": "customers",
+                        "Alias": "c",
+                        "Startup Cost": 0.29,
+                        "Total Cost": 8.3,
+                        "Plan Rows": 1,
+                        "Plan Width": 8,
+                        "Disabled": false,
+                        "Index Cond": "(id = '42'::bigint)"
+                      },
+                      {
+                        "Node Type": "Bitmap Heap Scan",
+                        "Parent Relationship": "Inner",
+                        "Parallel Aware": false,
+                        "Async Capable": false,
+                        "Relation Name": "events",
+                        "Alias": "e",
+                        "Startup Cost": 5.17,
+                        "Total Cost": 358.82,
+                        "Plan Rows": 96,
+                        "Plan Width": 12,
+                        "Disabled": false,
+                        "Recheck Cond": "(customer_id = '42'::bigint)",
+                        "Plans": [
+                          {
+                            "Node Type": "Bitmap Index Scan",
+                            "Parent Relationship": "Outer",
+                            "Parallel Aware": false,
+                            "Async Capable": false,
+                            "Index Name": "events_customer_id_idx",
+                            "Startup Cost": 0,
+                            "Total Cost": 5.14,
+                            "Plan Rows": 96,
+                            "Plan Width": 0,
+                            "Disabled": false,
+                            "Index Cond": "(customer_id = '42'::bigint)"
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ],
+      "peakObservedLoadingStorageBytes": 9844318301,
+      "peakObservedLoadingSqliteWalBytes": 0
+    },
+    {
+      "backend": "singlefile",
+      "payloadHash": "a68aeb01113bdd88c2006dca5885a5c131d914fdd89d48a62a6573b6b43c16b7",
+      "targetBytes": 5368709120,
+      "rows": 960000,
+      "relationBytes": 5375270912,
+      "loadMs": 55879.145096,
+      "indexMs": 838.513282999993,
+      "bytesBeforeIndex": 11380378448,
+      "imageBeforeIndex": 10969530368,
+      "closedBytes": 10969530368,
+      "samples": [
+        {
+          "phase": "joinWithoutIndex",
+          "elapsedMs": 173.66501300000527,
+          "result": {
+            "n": "96",
+            "total": "3936"
+          },
+          "excludedWarmup": true
+        },
+        {
+          "phase": "joinWithoutIndex",
+          "elapsedMs": 159.25584099999833,
+          "result": {
+            "n": "96",
+            "total": "3936"
+          },
+          "excludedWarmup": false
+        },
+        {
+          "phase": "joinWithoutIndex",
+          "elapsedMs": 148.78002500000002,
+          "result": {
+            "n": "96",
+            "total": "3936"
+          },
+          "excludedWarmup": false
+        },
+        {
+          "phase": "joinWithoutIndex",
+          "elapsedMs": 162.14730899999995,
+          "result": {
+            "n": "96",
+            "total": "3936"
+          },
+          "excludedWarmup": false
+        },
+        {
+          "phase": "joinWithIndex",
+          "elapsedMs": 2.6265110000022105,
+          "result": {
+            "n": "96",
+            "total": "3936"
+          },
+          "excludedWarmup": true
+        },
+        {
+          "phase": "joinWithIndex",
+          "elapsedMs": 0.6985710000008112,
+          "result": {
+            "n": "96",
+            "total": "3936"
+          },
+          "excludedWarmup": false
+        },
+        {
+          "phase": "joinWithIndex",
+          "elapsedMs": 0.5494170000019949,
+          "result": {
+            "n": "96",
+            "total": "3936"
+          },
+          "excludedWarmup": false
+        },
+        {
+          "phase": "joinWithIndex",
+          "elapsedMs": 0.5118499999953201,
+          "result": {
+            "n": "96",
+            "total": "3936"
+          },
+          "excludedWarmup": false
+        }
+      ],
+      "planWithout": [
+        {
+          "QUERY PLAN": [
+            {
+              "Plan": {
+                "Node Type": "Aggregate",
+                "Strategy": "Plain",
+                "Partial Mode": "Simple",
+                "Parallel Aware": false,
+                "Async Capable": false,
+                "Startup Cost": 20009.74,
+                "Total Cost": 20009.76,
+                "Plan Rows": 1,
+                "Plan Width": 64,
+                "Disabled": false,
+                "Plans": [
+                  {
+                    "Node Type": "Nested Loop",
+                    "Parent Relationship": "Outer",
+                    "Parallel Aware": false,
+                    "Async Capable": false,
+                    "Join Type": "Inner",
+                    "Startup Cost": 0.29,
+                    "Total Cost": 20009.26,
+                    "Plan Rows": 96,
+                    "Plan Width": 4,
+                    "Disabled": false,
+                    "Inner Unique": false,
+                    "Plans": [
+                      {
+                        "Node Type": "Index Only Scan",
+                        "Parent Relationship": "Outer",
+                        "Parallel Aware": false,
+                        "Async Capable": false,
+                        "Scan Direction": "Forward",
+                        "Index Name": "customers_pkey",
+                        "Relation Name": "customers",
+                        "Alias": "c",
+                        "Startup Cost": 0.29,
+                        "Total Cost": 8.3,
+                        "Plan Rows": 1,
+                        "Plan Width": 8,
+                        "Disabled": false,
+                        "Index Cond": "(id = '42'::bigint)"
+                      },
+                      {
+                        "Node Type": "Seq Scan",
+                        "Parent Relationship": "Inner",
+                        "Parallel Aware": false,
+                        "Async Capable": false,
+                        "Relation Name": "events",
+                        "Alias": "e",
+                        "Startup Cost": 0,
+                        "Total Cost": 20000,
+                        "Plan Rows": 96,
+                        "Plan Width": 12,
+                        "Disabled": false,
+                        "Filter": "(customer_id = '42'::bigint)"
+                      }
+                    ]
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ],
+      "planWith": [
+        {
+          "QUERY PLAN": [
+            {
+              "Plan": {
+                "Node Type": "Aggregate",
+                "Strategy": "Plain",
+                "Partial Mode": "Simple",
+                "Parallel Aware": false,
+                "Async Capable": false,
+                "Startup Cost": 368.56,
+                "Total Cost": 368.58,
+                "Plan Rows": 1,
+                "Plan Width": 64,
+                "Disabled": false,
+                "Plans": [
+                  {
+                    "Node Type": "Nested Loop",
+                    "Parent Relationship": "Outer",
+                    "Parallel Aware": false,
+                    "Async Capable": false,
+                    "Join Type": "Inner",
+                    "Startup Cost": 5.45,
+                    "Total Cost": 368.08,
+                    "Plan Rows": 96,
+                    "Plan Width": 4,
+                    "Disabled": false,
+                    "Inner Unique": false,
+                    "Plans": [
+                      {
+                        "Node Type": "Index Only Scan",
+                        "Parent Relationship": "Outer",
+                        "Parallel Aware": false,
+                        "Async Capable": false,
+                        "Scan Direction": "Forward",
+                        "Index Name": "customers_pkey",
+                        "Relation Name": "customers",
+                        "Alias": "c",
+                        "Startup Cost": 0.29,
+                        "Total Cost": 8.3,
+                        "Plan Rows": 1,
+                        "Plan Width": 8,
+                        "Disabled": false,
+                        "Index Cond": "(id = '42'::bigint)"
+                      },
+                      {
+                        "Node Type": "Bitmap Heap Scan",
+                        "Parent Relationship": "Inner",
+                        "Parallel Aware": false,
+                        "Async Capable": false,
+                        "Relation Name": "events",
+                        "Alias": "e",
+                        "Startup Cost": 5.17,
+                        "Total Cost": 358.82,
+                        "Plan Rows": 96,
+                        "Plan Width": 12,
+                        "Disabled": false,
+                        "Recheck Cond": "(customer_id = '42'::bigint)",
+                        "Plans": [
+                          {
+                            "Node Type": "Bitmap Index Scan",
+                            "Parent Relationship": "Outer",
+                            "Parallel Aware": false,
+                            "Async Capable": false,
+                            "Index Name": "events_customer_id_idx",
+                            "Startup Cost": 0,
+                            "Total Cost": 5.14,
+                            "Plan Rows": 96,
+                            "Plan Width": 0,
+                            "Disabled": false,
+                            "Index Cond": "(customer_id = '42'::bigint)"
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ],
+      "peakObservedLoadingStorageBytes": 11085342776,
+      "peakObservedLoadingSqliteWalBytes": 115689528
+    }
+  ],
+  "notes": [
+    "Two application tables. PostgreSQL total relation sizes (including TOAST) reach at least 5 GiB before index creation. Physical backend sizes separately measured; adapter file need not equal logical PostgreSQL size. Peak loading storage/WAL sizes are observed only at loading batch boundaries and may miss intra-batch or later index/checkpoint peaks.",
+    "No event join-key index in first phase; indexed customers and indexed events in second. Explicit plans saved. Same selective customer join avoids a pathological Cartesian join.",
+    "One excluded warm-up per join phase. OS cache not cleared. Backends run sequentially once, so environmental/order effects remain; not a cross-machine performance guarantee.",
+    "Payload is one cryptographically random base64 value reused across rows, resisting per-value PostgreSQL compression; storage layers do not deduplicate it. Joins read keys/amounts, not the complete payload: this checks large database operation, not a full 5 GiB payload scan.",
+    "100 MiB configured page-cache budget, not a total RAM cap. NodeFS fsync=off versus SQLite synchronous=FULL; hardware durability differs."
+  ]
+}

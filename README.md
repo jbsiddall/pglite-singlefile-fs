@@ -86,6 +86,8 @@ const filesystem = new SingleFileFS('./postgres.db', {
 
 PGlite's PostgreSQL page cache remains the primary data cache. The adapter reuses prepared statements and filesystem metadata, and temporarily holds dirty chunks until a flush. The pager limit is not a whole-process RAM cap: PostgreSQL memory, runtime memory, dirty buffers, metadata, and the operating system's page cache are additional.
 
+**Transient dirty buffers are currently unbounded.** A single very large query or transaction can accumulate many changed chunks before its persistence boundary and use much more memory than `sqliteCacheKiB` suggests. Batch large imports into bounded transactions; do not treat the cache controls as a guarantee that a giant transaction fits a small RAM budget.
+
 New images use 8 KiB logical chunks and an 8 KiB container page size. Existing images retain their recorded layout. Advanced creation options include `pageSize`, `chunkTable`, `journalMode`, and `lockingMode`; changing them can affect space, concurrency, and performance. `durable: false` is an explicit unsafe mode and must not be represented as equivalent to durable storage.
 
 ## Performance
@@ -94,20 +96,31 @@ The useful question is how much the portable container costs compared with PGlit
 
 **The default durability settings differ:** the container uses SQLite `synchronous=FULL`, while PGlite's native Node filesystem runs PostgreSQL with `fsync=off`. These timings do not establish equal protection against hardware or power failure. The small suite warms its reads and uses a fixed 100 MiB configured page-cache budget: 100 MiB for native PGlite, or 98 MiB for PGlite plus 2 MiB for the container. The adapter clean-page cache is disabled. Operating-system caches are not cleared.
 
-The compact README comparison covers six operations on Node's current LTS line:
+Recorded on **Node.js 24.21.0 LTS, Linux x86-64**, both locally on an AMD EPYC 9V74 host and on a GitHub-hosted Ubuntu runner. Each backend gets one excluded warm-up and five measured suites in fresh processes/databases; backend order alternates. Ratios compare median settled operation times, including pending adapter flushes. **Lower is better; 1.00× equals the native filesystem.**
 
-| Operation | What the comparison measures |
-| --- | --- |
-| Large batch read | Return all rows from an explicitly warmed table |
-| Large batch insert | Insert many rows in one batch |
-| Large batch update | Update many rows in one batch |
-| Small frequent read | Repeated indexed lookups |
-| Small frequent insert | Individual inserts |
-| Small frequent update | Individual indexed updates |
+| Operation | Workload | Local time ratio | Hosted CI time ratio |
+| --- | --- | ---: | ---: |
+| Large batch read | Return all 10,000 warmed rows | **1.04×** | **0.98×** |
+| Large batch insert | Insert 10,000 rows in one statement | **1.10×** | **1.34×** |
+| Large batch update | Update 10,000 rows in one statement | **1.09×** | **1.37×** |
+| Small frequent read | 500 indexed lookups | **0.94×** | **0.99×** |
+| Small frequent insert | 500 individual inserts | **1.04×** | **2.60×** |
+| Small frequent update | 500 indexed updates | **1.05×** | **2.42×** |
 
-Measured ratios and report links will be added once the repository's benchmark run completes. Historical proof-of-concept timings used different workloads and are not substituted for this suite.
+**Frequent durable writes can cost materially more than the local results suggest.** Runtime and host differences matter: the initial Bun 1.4.2 Linux x86-64 lane measured **9.15×** for individual inserts and **8.33×** for individual updates. The current adapter is not a negligible-overhead replacement for every workload. Inspect the [complete initial CI matrix and raw samples](docs/benchmarks/initial-ci-matrix.json), including slower results and the incomplete Bun 1.2.23 lane, before choosing it.
 
-A separate large benchmark builds two tables with at least 5 GiB of PostgreSQL relation storage and compares joins with and without indexes. Container file size is measured separately. The joins read keys and amounts rather than the entire payload, so this is a large-database join check, not a full 5 GiB payload scan. Its setup, measured size, cache conditions, and completion status must accompany any reported results; defining the benchmark is not evidence of a completed large run.
+The local warmed read phases made zero filesystem reads, so they measure behavior served by PostgreSQL's cache rather than container read throughput. Sub-1.00× read results are measurements from these runs, not general speedup guarantees. [Local raw samples and settings](docs/benchmarks/node24-linux-x64.json) · [Local HTML report](docs/benchmarks/node24-linux-x64.html) · [Initial CI run and downloadable reports](https://github.com/jbsiddall/pglite-singlefile-fs/actions/runs/37041731782). Historical proof-of-concept timings used different workloads and are not substituted for this suite.
+
+The separate large run completed on the same local Node LTS host: **960,000 events plus 10,000 customers**, with **5.006 GiB of PostgreSQL relation storage** including TOAST on each backend. Three measured joins follow one excluded warm-up per phase. Customers retain their primary-key index; the second phase adds the events' customer join-key index.
+
+| Large-database operation | Singlefile / native time |
+| --- | ---: |
+| Selective join without the event join-key index | **1.60×** |
+| Same join with the event join-key index | **1.03×** |
+
+**Storage overhead is substantial in the current layout:** after clean shutdown, the native data directory occupied **6.034 GiB**, while the single main container file occupied **10.216 GiB**, or **1.69×** as much space. Portable packaging is not free.
+
+The joins read keys and amounts rather than the complete payload, so this is a large-database join check, not a full 5 GiB payload scan. Backends run sequentially, OS caches are not cleared, and the indexed result is a short warm query. [Large-run raw samples, query plans, and sizes](docs/benchmarks/node24-linux-x64-large.json) · [HTML report](docs/benchmarks/node24-linux-x64-large.html).
 
 ```sh
 npm run bench:sample  # Recorded operation timings and an HTML comparison.
@@ -131,6 +144,22 @@ CI runs tests and records benchmarks on pull-request updates and pushes to the d
 Vitest coordinates the suite on Node.js. The database workers execute under the runtime being tested, so a Bun or Deno matrix entry exercises that runtime's database and filesystem behavior rather than only changing a label.
 
 Runtime coverage selects the latest published non-prerelease release and representative preceding release lines, rather than redundant patch versions. The requested platform targets are Linux x86-64, Linux ARM64, and macOS ARM64. Check [Actions](https://github.com/jbsiddall/pglite-singlefile-fs/actions) for what has actually passed.
+
+Initial local validation passed all 11 tests on Linux x86-64 using Node.js 24.19.0, Bun 1.4.2, and Deno 2.9.6. This does not establish the full hosted runtime/platform matrix; ARM and macOS results remain separate checks.
+
+In the [initial hosted run](https://github.com/jbsiddall/pglite-singlefile-fs/actions/runs/37041731782), all 15 runtime/platform lanes passed the 11 tests and six Vitest benchmarks. Fourteen lanes completed the separate sampled benchmark; the Bun 1.2.23 Linux lane failed during a later native-filesystem benchmark iteration with a WASM error. That failure is retained in the raw report and must be resolved before calling the entire workflow green.
+
+### Older Bun compatibility
+
+**Bun 1.2.23 needs a launch workaround for the tested PGlite workloads:**
+
+```sh
+JSC_useWasmOSR=false bun your-script.mjs
+```
+
+The observed WASM startup failure also reproduced with PGlite's native filesystem and no adapter imports. Disabling JavaScriptCore's WASM OSR setting passed ten fresh upstream reproductions and a complete local benchmark with five measured suites plus a warm-up per backend. [Flagged local raw results](docs/benchmarks/bun12-linux-x64-wasm-osr-disabled.json) retain the process setting explicitly. CI applies this flag to the older Bun lane and to both benchmark backends; it does not establish default-settings compatibility. Prefer a current Bun release. The library does not change this process-level setting automatically.
+
+[Bun issue #26366](https://github.com/oven-sh/bun/issues/26366) describes a related JavaScriptCore WASM OSR issue. Our reproducer and workaround do not prove that it has the identical root cause. The initial failed matrix snapshot remains available above.
 
 ## FAQ
 
@@ -159,6 +188,8 @@ No. It implements the filesystem surface required by the supported PGlite worklo
 ## Roadmap
 
 **Make single-file storage an official PGlite capability:** upstream releases its own implementation or adopts this filesystem, making portable embedded PostgreSQL easy for everyone to use.
+
+The [upstream alignment issue](https://github.com/jbsiddall/pglite-singlefile-fs/issues/1) tracks matching PGlite's filesystem conventions to make adoption straightforward.
 
 ## Contributing and AI transparency
 

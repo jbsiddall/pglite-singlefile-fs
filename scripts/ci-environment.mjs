@@ -15,6 +15,7 @@ if (expected && !version.split(/\s+/).some(part => part.replace(/^v/, '') === ex
 const environment = {
   runtime, version, coordinator: process.version, platform: process.platform,
   architecture: process.arch, osRelease: os.release(), cpus: os.cpus().length,
+  runtimeFlags: process.env.JSC_useWasmOSR === undefined ? {} : { JSC_useWasmOSR: process.env.JSC_useWasmOSR },
   cpuModel: os.cpus()[0]?.model, totalMemoryBytes: os.totalmem(),
   commit: process.env.GITHUB_SHA || null, runId: process.env.GITHUB_RUN_ID || null,
   note: 'Hosted-runner timings are observations, not controlled hardware comparisons.',

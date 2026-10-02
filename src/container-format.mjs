@@ -2,7 +2,7 @@ const APPLICATION_ID = 0x50475346; // "PGSF"
 const FORMAT_VERSION = 1;
 
 // Only accept our own format, or the exact schema used by the original POC.
-// These checks run before any PRAGMA, schema or data mutation. Opening an
+// These checks run before any mutating PRAGMA, schema or data change. Opening an
 // unrelated SQLite database must never quietly turn it into a PG container.
 export function assertContainerFormat(store) {
     const id = store.prepare('PRAGMA application_id').get().application_id;

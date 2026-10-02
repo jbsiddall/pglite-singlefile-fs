@@ -67,6 +67,10 @@ jobs:
         uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:
           bun-version: ${{ matrix.version }}
+      # Upstream Bun 1.2 WASM OSR workaround; kept explicit in benchmark metadata.
+      - name: Disable affected Bun 1.2 WASM OSR path
+        if: matrix.runtime == 'bun' && matrix.version == '1.2.23'
+        run: echo 'JSC_useWasmOSR=false' >> "$GITHUB_ENV"
       - name: Verify runner and record environment
         run: node scripts/ci-environment.mjs
       - run: npm ci --ignore-scripts

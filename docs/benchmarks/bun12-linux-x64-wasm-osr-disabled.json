@@ -1,0 +1,820 @@
+{
+  "timestamp": "2026-10-02T17:46:17.743Z",
+  "repeats": 5,
+  "environments": {
+    "singlefile": {
+      "runtime": {
+        "name": "bun",
+        "version": "1.2.23"
+      },
+      "runtimeFlags": {
+        "JSC_useWasmOSR": "false"
+      },
+      "platform": "linux",
+      "arch": "x64",
+      "cpu": "AMD EPYC 9V74 80-Core Processor",
+      "config": {
+        "backend": "singlefile",
+        "rows": 10000,
+        "frequent": 500,
+        "batch": 10000
+      },
+      "pageCacheMiB": {
+        "postgres": 98,
+        "sqlite": 2,
+        "adapterClean": 0
+      },
+      "settings": [
+        {
+          "name": "fsync",
+          "setting": "off"
+        },
+        {
+          "name": "full_page_writes",
+          "setting": "on"
+        },
+        {
+          "name": "shared_buffers",
+          "setting": "12544"
+        },
+        {
+          "name": "synchronous_commit",
+          "setting": "on"
+        }
+      ]
+    },
+    "nodefs": {
+      "runtime": {
+        "name": "bun",
+        "version": "1.2.23"
+      },
+      "runtimeFlags": {
+        "JSC_useWasmOSR": "false"
+      },
+      "platform": "linux",
+      "arch": "x64",
+      "cpu": "AMD EPYC 9V74 80-Core Processor",
+      "config": {
+        "backend": "nodefs",
+        "rows": 10000,
+        "frequent": 500,
+        "batch": 10000
+      },
+      "pageCacheMiB": {
+        "postgres": 100,
+        "sqlite": 0,
+        "adapterClean": 0
+      },
+      "settings": [
+        {
+          "name": "fsync",
+          "setting": "off"
+        },
+        {
+          "name": "full_page_writes",
+          "setting": "on"
+        },
+        {
+          "name": "shared_buffers",
+          "setting": "12800"
+        },
+        {
+          "name": "synchronous_commit",
+          "setting": "on"
+        }
+      ]
+    }
+  },
+  "summary": [
+    {
+      "workload": "batchRead",
+      "nodefsMs": 41.1919740000003,
+      "singlefileMs": 40.8982589999996,
+      "ratio": 0.9928696061033467
+    },
+    {
+      "workload": "batchInsert",
+      "nodefsMs": 27.508511,
+      "singlefileMs": 35.201262999999926,
+      "ratio": 1.2796498872657966
+    },
+    {
+      "workload": "batchUpdate",
+      "nodefsMs": 52.65796900000032,
+      "singlefileMs": 54.23459300000013,
+      "ratio": 1.0299408433318005
+    },
+    {
+      "workload": "frequentRead",
+      "nodefsMs": 153.23371199999974,
+      "singlefileMs": 152.79007000000001,
+      "ratio": 0.9971048015856998
+    },
+    {
+      "workload": "frequentInsert",
+      "nodefsMs": 139.2923939999996,
+      "singlefileMs": 193.45552399999997,
+      "ratio": 1.3888448496333585
+    },
+    {
+      "workload": "frequentUpdate",
+      "nodefsMs": 171.86862999999994,
+      "singlefileMs": 220.22933299999977,
+      "ratio": 1.2813817914298837
+    }
+  ],
+  "records": [
+    {
+      "backend": "nodefs",
+      "iteration": 0,
+      "samples": [
+        {
+          "workload": "batchRead",
+          "acknowledgedMs": 40.41408000000001,
+          "settledMs": 40.4246149999999,
+          "filesystemReads": null,
+          "rows": 10000,
+          "checksum": "4995000"
+        },
+        {
+          "workload": "batchInsert",
+          "acknowledgedMs": 33.65744300000006,
+          "settledMs": 33.66244000000006,
+          "filesystemReads": null,
+          "rows": 20000,
+          "checksum": "9990000"
+        },
+        {
+          "workload": "batchUpdate",
+          "acknowledgedMs": 52.65393300000005,
+          "settledMs": 52.65796900000032,
+          "filesystemReads": null,
+          "rows": 20000,
+          "checksum": "10000000"
+        },
+        {
+          "workload": "frequentRead",
+          "acknowledgedMs": 153.22290499999963,
+          "settledMs": 153.23371199999974,
+          "filesystemReads": null,
+          "rows": 20000,
+          "checksum": "10000000"
+        },
+        {
+          "workload": "frequentInsert",
+          "acknowledgedMs": 141.86469799999986,
+          "settledMs": 141.87111700000014,
+          "filesystemReads": null,
+          "rows": 20500,
+          "checksum": "10124750"
+        },
+        {
+          "workload": "frequentUpdate",
+          "acknowledgedMs": 153.3710729999998,
+          "settledMs": 153.3785039999998,
+          "filesystemReads": null,
+          "rows": 20500,
+          "checksum": "10125250"
+        }
+      ],
+      "storage": {
+        "bytes": 42246182
+      }
+    },
+    {
+      "backend": "singlefile",
+      "iteration": 0,
+      "samples": [
+        {
+          "workload": "batchRead",
+          "acknowledgedMs": 47.39901000000009,
+          "settledMs": 47.41483299999982,
+          "filesystemReads": 0,
+          "rows": 10000,
+          "checksum": "4995000"
+        },
+        {
+          "workload": "batchInsert",
+          "acknowledgedMs": 47.88889599999993,
+          "settledMs": 47.900392999999895,
+          "filesystemReads": 0,
+          "rows": 20000,
+          "checksum": "9990000"
+        },
+        {
+          "workload": "batchUpdate",
+          "acknowledgedMs": 53.00467600000002,
+          "settledMs": 53.01359000000002,
+          "filesystemReads": 2,
+          "rows": 20000,
+          "checksum": "10000000"
+        },
+        {
+          "workload": "frequentRead",
+          "acknowledgedMs": 162.59449300000006,
+          "settledMs": 162.61629600000015,
+          "filesystemReads": 0,
+          "rows": 20000,
+          "checksum": "10000000"
+        },
+        {
+          "workload": "frequentInsert",
+          "acknowledgedMs": 204.2751549999998,
+          "settledMs": 204.29788899999994,
+          "filesystemReads": 0,
+          "rows": 20500,
+          "checksum": "10124750"
+        },
+        {
+          "workload": "frequentUpdate",
+          "acknowledgedMs": 222.74201799999992,
+          "settledMs": 222.76035600000023,
+          "filesystemReads": 0,
+          "rows": 20500,
+          "checksum": "10125250"
+        }
+      ],
+      "storage": {
+        "bytes": 42852352
+      }
+    },
+    {
+      "backend": "singlefile",
+      "iteration": 1,
+      "samples": [
+        {
+          "workload": "batchRead",
+          "acknowledgedMs": 42.59573499999988,
+          "settledMs": 42.616757000000234,
+          "filesystemReads": 0,
+          "rows": 10000,
+          "checksum": "4995000"
+        },
+        {
+          "workload": "batchInsert",
+          "acknowledgedMs": 38.9232649999999,
+          "settledMs": 38.94324499999993,
+          "filesystemReads": 0,
+          "rows": 20000,
+          "checksum": "9990000"
+        },
+        {
+          "workload": "batchUpdate",
+          "acknowledgedMs": 54.2269110000002,
+          "settledMs": 54.23459300000013,
+          "filesystemReads": 2,
+          "rows": 20000,
+          "checksum": "10000000"
+        },
+        {
+          "workload": "frequentRead",
+          "acknowledgedMs": 151.6397649999999,
+          "settledMs": 151.65374599999996,
+          "filesystemReads": 0,
+          "rows": 20000,
+          "checksum": "10000000"
+        },
+        {
+          "workload": "frequentInsert",
+          "acknowledgedMs": 193.43578400000024,
+          "settledMs": 193.45552399999997,
+          "filesystemReads": 0,
+          "rows": 20500,
+          "checksum": "10124750"
+        },
+        {
+          "workload": "frequentUpdate",
+          "acknowledgedMs": 221.14862099999982,
+          "settledMs": 221.16288199999963,
+          "filesystemReads": 0,
+          "rows": 20500,
+          "checksum": "10125250"
+        }
+      ],
+      "storage": {
+        "bytes": 42852352
+      }
+    },
+    {
+      "backend": "nodefs",
+      "iteration": 1,
+      "samples": [
+        {
+          "workload": "batchRead",
+          "acknowledgedMs": 31.698703999999907,
+          "settledMs": 31.70652599999994,
+          "filesystemReads": null,
+          "rows": 10000,
+          "checksum": "4995000"
+        },
+        {
+          "workload": "batchInsert",
+          "acknowledgedMs": 27.05164799999966,
+          "settledMs": 27.055653999999777,
+          "filesystemReads": null,
+          "rows": 20000,
+          "checksum": "9990000"
+        },
+        {
+          "workload": "batchUpdate",
+          "acknowledgedMs": 52.36564300000009,
+          "settledMs": 52.368676999999934,
+          "filesystemReads": null,
+          "rows": 20000,
+          "checksum": "10000000"
+        },
+        {
+          "workload": "frequentRead",
+          "acknowledgedMs": 157.60093700000016,
+          "settledMs": 157.60995000000003,
+          "filesystemReads": null,
+          "rows": 20000,
+          "checksum": "10000000"
+        },
+        {
+          "workload": "frequentInsert",
+          "acknowledgedMs": 146.61332500000026,
+          "settledMs": 146.62419100000034,
+          "filesystemReads": null,
+          "rows": 20500,
+          "checksum": "10124750"
+        },
+        {
+          "workload": "frequentUpdate",
+          "acknowledgedMs": 190.7248629999999,
+          "settledMs": 190.73305600000003,
+          "filesystemReads": null,
+          "rows": 20500,
+          "checksum": "10125250"
+        }
+      ],
+      "storage": {
+        "bytes": 42246182
+      }
+    },
+    {
+      "backend": "nodefs",
+      "iteration": 2,
+      "samples": [
+        {
+          "workload": "batchRead",
+          "acknowledgedMs": 56.18787399999974,
+          "settledMs": 56.19766900000013,
+          "filesystemReads": null,
+          "rows": 10000,
+          "checksum": "4995000"
+        },
+        {
+          "workload": "batchInsert",
+          "acknowledgedMs": 32.29339600000003,
+          "settledMs": 32.2992549999999,
+          "filesystemReads": null,
+          "rows": 20000,
+          "checksum": "9990000"
+        },
+        {
+          "workload": "batchUpdate",
+          "acknowledgedMs": 54.8799640000002,
+          "settledMs": 54.88388000000032,
+          "filesystemReads": null,
+          "rows": 20000,
+          "checksum": "10000000"
+        },
+        {
+          "workload": "frequentRead",
+          "acknowledgedMs": 157.8018280000001,
+          "settledMs": 157.81082199999992,
+          "filesystemReads": null,
+          "rows": 20000,
+          "checksum": "10000000"
+        },
+        {
+          "workload": "frequentInsert",
+          "acknowledgedMs": 139.2861939999998,
+          "settledMs": 139.2923939999996,
+          "filesystemReads": null,
+          "rows": 20500,
+          "checksum": "10124750"
+        },
+        {
+          "workload": "frequentUpdate",
+          "acknowledgedMs": 153.24283099999957,
+          "settledMs": 153.25068299999975,
+          "filesystemReads": null,
+          "rows": 20500,
+          "checksum": "10125250"
+        }
+      ],
+      "storage": {
+        "bytes": 42246182
+      }
+    },
+    {
+      "backend": "singlefile",
+      "iteration": 2,
+      "samples": [
+        {
+          "workload": "batchRead",
+          "acknowledgedMs": 40.88343699999996,
+          "settledMs": 40.8982589999996,
+          "filesystemReads": 0,
+          "rows": 10000,
+          "checksum": "4995000"
+        },
+        {
+          "workload": "batchInsert",
+          "acknowledgedMs": 29.21554100000003,
+          "settledMs": 29.22880099999975,
+          "filesystemReads": 0,
+          "rows": 20000,
+          "checksum": "9990000"
+        },
+        {
+          "workload": "batchUpdate",
+          "acknowledgedMs": 49.86153999999988,
+          "settledMs": 49.8717459999998,
+          "filesystemReads": 2,
+          "rows": 20000,
+          "checksum": "10000000"
+        },
+        {
+          "workload": "frequentRead",
+          "acknowledgedMs": 160.49235199999976,
+          "settledMs": 160.50763499999994,
+          "filesystemReads": 0,
+          "rows": 20000,
+          "checksum": "10000000"
+        },
+        {
+          "workload": "frequentInsert",
+          "acknowledgedMs": 168.9393829999999,
+          "settledMs": 168.9608049999997,
+          "filesystemReads": 0,
+          "rows": 20500,
+          "checksum": "10124750"
+        },
+        {
+          "workload": "frequentUpdate",
+          "acknowledgedMs": 172.65518799999973,
+          "settledMs": 172.68435199999976,
+          "filesystemReads": 0,
+          "rows": 20500,
+          "checksum": "10125250"
+        }
+      ],
+      "storage": {
+        "bytes": 42852352
+      }
+    },
+    {
+      "backend": "singlefile",
+      "iteration": 3,
+      "samples": [
+        {
+          "workload": "batchRead",
+          "acknowledgedMs": 39.40752300000031,
+          "settledMs": 39.41931000000022,
+          "filesystemReads": 0,
+          "rows": 10000,
+          "checksum": "4995000"
+        },
+        {
+          "workload": "batchInsert",
+          "acknowledgedMs": 33.59549500000003,
+          "settledMs": 33.608464999999796,
+          "filesystemReads": 0,
+          "rows": 20000,
+          "checksum": "9990000"
+        },
+        {
+          "workload": "batchUpdate",
+          "acknowledgedMs": 62.19441999999981,
+          "settledMs": 62.20480499999985,
+          "filesystemReads": 2,
+          "rows": 20000,
+          "checksum": "10000000"
+        },
+        {
+          "workload": "frequentRead",
+          "acknowledgedMs": 152.77489700000024,
+          "settledMs": 152.79007000000001,
+          "filesystemReads": 0,
+          "rows": 20000,
+          "checksum": "10000000"
+        },
+        {
+          "workload": "frequentInsert",
+          "acknowledgedMs": 199.42666499999996,
+          "settledMs": 199.44720599999982,
+          "filesystemReads": 0,
+          "rows": 20500,
+          "checksum": "10124750"
+        },
+        {
+          "workload": "frequentUpdate",
+          "acknowledgedMs": 220.2131589999999,
+          "settledMs": 220.22933299999977,
+          "filesystemReads": 0,
+          "rows": 20500,
+          "checksum": "10125250"
+        }
+      ],
+      "storage": {
+        "bytes": 42852352
+      }
+    },
+    {
+      "backend": "nodefs",
+      "iteration": 3,
+      "samples": [
+        {
+          "workload": "batchRead",
+          "acknowledgedMs": 44.7993690000003,
+          "settledMs": 44.80618900000036,
+          "filesystemReads": null,
+          "rows": 10000,
+          "checksum": "4995000"
+        },
+        {
+          "workload": "batchInsert",
+          "acknowledgedMs": 25.44035100000019,
+          "settledMs": 25.44559900000013,
+          "filesystemReads": null,
+          "rows": 20000,
+          "checksum": "9990000"
+        },
+        {
+          "workload": "batchUpdate",
+          "acknowledgedMs": 48.340361999999914,
+          "settledMs": 48.34423800000013,
+          "filesystemReads": null,
+          "rows": 20000,
+          "checksum": "10000000"
+        },
+        {
+          "workload": "frequentRead",
+          "acknowledgedMs": 152.6582800000001,
+          "settledMs": 152.66685299999972,
+          "filesystemReads": null,
+          "rows": 20000,
+          "checksum": "10000000"
+        },
+        {
+          "workload": "frequentInsert",
+          "acknowledgedMs": 136.83356700000013,
+          "settledMs": 136.84022700000014,
+          "filesystemReads": null,
+          "rows": 20500,
+          "checksum": "10124750"
+        },
+        {
+          "workload": "frequentUpdate",
+          "acknowledgedMs": 204.6521560000001,
+          "settledMs": 204.666287,
+          "filesystemReads": null,
+          "rows": 20500,
+          "checksum": "10125250"
+        }
+      ],
+      "storage": {
+        "bytes": 42246182
+      }
+    },
+    {
+      "backend": "nodefs",
+      "iteration": 4,
+      "samples": [
+        {
+          "workload": "batchRead",
+          "acknowledgedMs": 41.184252000000015,
+          "settledMs": 41.1919740000003,
+          "filesystemReads": null,
+          "rows": 10000,
+          "checksum": "4995000"
+        },
+        {
+          "workload": "batchInsert",
+          "acknowledgedMs": 27.504043999999794,
+          "settledMs": 27.508511,
+          "filesystemReads": null,
+          "rows": 20000,
+          "checksum": "9990000"
+        },
+        {
+          "workload": "batchUpdate",
+          "acknowledgedMs": 55.47062300000016,
+          "settledMs": 55.47410799999989,
+          "filesystemReads": null,
+          "rows": 20000,
+          "checksum": "10000000"
+        },
+        {
+          "workload": "frequentRead",
+          "acknowledgedMs": 144.23850100000027,
+          "settledMs": 144.24559200000022,
+          "filesystemReads": null,
+          "rows": 20000,
+          "checksum": "10000000"
+        },
+        {
+          "workload": "frequentInsert",
+          "acknowledgedMs": 122.83227500000021,
+          "settledMs": 122.83898499999987,
+          "filesystemReads": null,
+          "rows": 20500,
+          "checksum": "10124750"
+        },
+        {
+          "workload": "frequentUpdate",
+          "acknowledgedMs": 171.86156900000015,
+          "settledMs": 171.86862999999994,
+          "filesystemReads": null,
+          "rows": 20500,
+          "checksum": "10125250"
+        }
+      ],
+      "storage": {
+        "bytes": 42246182
+      }
+    },
+    {
+      "backend": "singlefile",
+      "iteration": 4,
+      "samples": [
+        {
+          "workload": "batchRead",
+          "acknowledgedMs": 37.88174200000003,
+          "settledMs": 37.89788700000008,
+          "filesystemReads": 0,
+          "rows": 10000,
+          "checksum": "4995000"
+        },
+        {
+          "workload": "batchInsert",
+          "acknowledgedMs": 35.18901499999993,
+          "settledMs": 35.201262999999926,
+          "filesystemReads": 0,
+          "rows": 20000,
+          "checksum": "9990000"
+        },
+        {
+          "workload": "batchUpdate",
+          "acknowledgedMs": 56.79430599999978,
+          "settledMs": 56.80383099999972,
+          "filesystemReads": 2,
+          "rows": 20000,
+          "checksum": "10000000"
+        },
+        {
+          "workload": "frequentRead",
+          "acknowledgedMs": 150.20975099999987,
+          "settledMs": 150.22464300000001,
+          "filesystemReads": 0,
+          "rows": 20000,
+          "checksum": "10000000"
+        },
+        {
+          "workload": "frequentInsert",
+          "acknowledgedMs": 179.72583699999996,
+          "settledMs": 179.74840100000029,
+          "filesystemReads": 0,
+          "rows": 20500,
+          "checksum": "10124750"
+        },
+        {
+          "workload": "frequentUpdate",
+          "acknowledgedMs": 195.5107979999998,
+          "settledMs": 195.80882599999995,
+          "filesystemReads": 0,
+          "rows": 20500,
+          "checksum": "10125250"
+        }
+      ],
+      "storage": {
+        "bytes": 42852352
+      }
+    }
+  ],
+  "warmups": [
+    {
+      "backend": "singlefile",
+      "iteration": -1,
+      "samples": [
+        {
+          "workload": "batchRead",
+          "acknowledgedMs": 45.864676000000145,
+          "settledMs": 45.89138600000024,
+          "filesystemReads": 0,
+          "rows": 10000,
+          "checksum": "4995000"
+        },
+        {
+          "workload": "batchInsert",
+          "acknowledgedMs": 41.569924999999785,
+          "settledMs": 41.5814019999998,
+          "filesystemReads": 0,
+          "rows": 20000,
+          "checksum": "9990000"
+        },
+        {
+          "workload": "batchUpdate",
+          "acknowledgedMs": 58.34092200000032,
+          "settledMs": 58.35046700000021,
+          "filesystemReads": 2,
+          "rows": 20000,
+          "checksum": "10000000"
+        },
+        {
+          "workload": "frequentRead",
+          "acknowledgedMs": 164.78852599999982,
+          "settledMs": 164.88155599999982,
+          "filesystemReads": 0,
+          "rows": 20000,
+          "checksum": "10000000"
+        },
+        {
+          "workload": "frequentInsert",
+          "acknowledgedMs": 179.68227300000035,
+          "settledMs": 179.70181200000025,
+          "filesystemReads": 0,
+          "rows": 20500,
+          "checksum": "10124750"
+        },
+        {
+          "workload": "frequentUpdate",
+          "acknowledgedMs": 175.42341499999975,
+          "settledMs": 175.44301399999995,
+          "filesystemReads": 0,
+          "rows": 20500,
+          "checksum": "10125250"
+        }
+      ],
+      "storage": {
+        "bytes": 42852352
+      }
+    },
+    {
+      "backend": "nodefs",
+      "iteration": -1,
+      "samples": [
+        {
+          "workload": "batchRead",
+          "acknowledgedMs": 56.25686900000028,
+          "settledMs": 56.267575000000306,
+          "filesystemReads": null,
+          "rows": 10000,
+          "checksum": "4995000"
+        },
+        {
+          "workload": "batchInsert",
+          "acknowledgedMs": 38.26915500000041,
+          "settledMs": 38.275064000000384,
+          "filesystemReads": null,
+          "rows": 20000,
+          "checksum": "9990000"
+        },
+        {
+          "workload": "batchUpdate",
+          "acknowledgedMs": 65.65283299999965,
+          "settledMs": 65.65637799999968,
+          "filesystemReads": null,
+          "rows": 20000,
+          "checksum": "10000000"
+        },
+        {
+          "workload": "frequentRead",
+          "acknowledgedMs": 163.40887199999997,
+          "settledMs": 163.41610200000014,
+          "filesystemReads": null,
+          "rows": 20000,
+          "checksum": "10000000"
+        },
+        {
+          "workload": "frequentInsert",
+          "acknowledgedMs": 131.30769799999962,
+          "settledMs": 131.31377699999985,
+          "filesystemReads": null,
+          "rows": 20500,
+          "checksum": "10124750"
+        },
+        {
+          "workload": "frequentUpdate",
+          "acknowledgedMs": 174.01355699999976,
+          "settledMs": 174.02100900000005,
+          "filesystemReads": null,
+          "rows": 20500,
+          "checksum": "10125250"
+        }
+      ],
+      "storage": {
+        "bytes": 42246182
+      }
+    }
+  ],
+  "notes": [
+    "One complete excluded warm-up per backend. Fresh process/database per measured suite. Backend order alternates. Startup and verification excluded from operation-only times. Includes pending persistence flush.",
+    "Warm reads: working set fits PostgreSQL cache. 100 MiB configured page-cache budget: NodeFS PostgreSQL 100 MiB; singlefile PostgreSQL 98 MiB + SQLite 2 MiB. Adapter clean cache disabled. Not a total process RAM cap.",
+    "SingleFileFS SQLite synchronous=FULL versus upstream NodeFS PostgreSQL fsync=off. This is not equal hardware durability. OS cache not cleared; no NVMe-specific performance claim.",
+    "All six workloads, raw samples and warm-ups retained; no performance gate or cherry-picked samples."
+  ]
+}

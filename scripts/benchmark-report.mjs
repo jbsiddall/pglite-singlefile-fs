@@ -1,0 +1,9 @@
+import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
+const input=process.argv[2]??'reports/benchmark-results.json';
+const output=process.argv[3]??'reports/benchmark-report.html';
+const report=JSON.parse(readFileSync(input,'utf8'));
+const escape=value=>String(value).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const rows=report.summary.map(row=>`<tr><td>${escape(row.workload??row.phase)}</td><td>${Number(row.nodefsMs).toFixed(3)}</td><td>${Number(row.singlefileMs).toFixed(3)}</td><td>${Number(row.ratio).toFixed(3)}×</td></tr>`).join('');
+const notes=report.notes.map(note=>`<li>${escape(note)}</li>`).join('');
+mkdirSync(output.slice(0,output.lastIndexOf('/'))||'.',{recursive:true});
+writeFileSync(output,`<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>PGlite filesystem benchmark</title><style>body{font:16px system-ui;max-width:1000px;margin:40px auto;padding:0 20px;color:#172033;background:#f7f9fc}table{border-collapse:collapse;width:100%;background:white}th,td{padding:12px;border-bottom:1px solid #d8e0eb;text-align:left}th{background:#e8eef8}pre{overflow:auto;background:#fff;padding:16px}li{margin:10px 0}small{color:#536174}</style><h1>PGlite filesystem benchmark</h1><p>Elapsed-time ratio: adapter ÷ built-in NodeFS. Lower is better; 1× is equal.</p><small>${escape(report.timestamp)} · ${escape(report.repeats??'')} measured repetitions</small><table><thead><tr><th>Workload</th><th>NodeFS median (ms)</th><th>SingleFileFS median (ms)</th><th>Ratio</th></tr></thead><tbody>${rows}</tbody></table><h2>Interpretation and limitations</h2><ul>${notes}</ul><h2>Environment</h2><pre>${escape(JSON.stringify(report.environments,null,2))}</pre><details><summary>All raw results and excluded warm-ups</summary><pre>${escape(JSON.stringify(report,null,2))}</pre></details></html>`);

@@ -1,0 +1,891 @@
+<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>PGlite filesystem benchmark</title><style>body{font:16px system-ui;max-width:1000px;margin:40px auto;padding:0 20px;color:#172033;background:#f7f9fc}table{border-collapse:collapse;width:100%;background:white}th,td{padding:12px;border-bottom:1px solid #d8e0eb;text-align:left}th{background:#e8eef8}pre{overflow:auto;background:#fff;padding:16px}li{margin:10px 0}small{color:#536174}</style><h1>PGlite filesystem benchmark</h1><p>Elapsed-time ratio: adapter ÷ built-in NodeFS. Lower is better; 1× is equal.</p><small>2026-10-02T17:35:13.481Z · 5 measured repetitions</small><table><thead><tr><th>Workload</th><th>NodeFS median (ms)</th><th>SingleFileFS median (ms)</th><th>Ratio</th></tr></thead><tbody><tr><td>batchRead</td><td>49.177</td><td>51.314</td><td>1.043×</td></tr><tr><td>batchInsert</td><td>30.305</td><td>33.340</td><td>1.100×</td></tr><tr><td>batchUpdate</td><td>49.035</td><td>53.260</td><td>1.086×</td></tr><tr><td>frequentRead</td><td>181.131</td><td>170.041</td><td>0.939×</td></tr><tr><td>frequentInsert</td><td>154.040</td><td>160.300</td><td>1.041×</td></tr><tr><td>frequentUpdate</td><td>182.674</td><td>192.329</td><td>1.053×</td></tr></tbody></table><h2>Interpretation and limitations</h2><ul><li>One complete excluded warm-up per backend. Fresh process/database per measured suite. Backend order alternates. Startup and verification excluded from operation-only times. Includes pending persistence flush.</li><li>Warm reads: working set fits PostgreSQL cache. 100 MiB configured page-cache budget: NodeFS PostgreSQL 100 MiB; singlefile PostgreSQL 98 MiB + SQLite 2 MiB. Adapter clean cache disabled. Not a total process RAM cap.</li><li>SingleFileFS SQLite synchronous=FULL versus upstream NodeFS PostgreSQL fsync=off. This is not equal hardware durability. OS cache not cleared; no NVMe-specific performance claim.</li><li>All six workloads, raw samples and warm-ups retained; no performance gate or cherry-picked samples.</li></ul><h2>Environment</h2><pre>{
+  &quot;singlefile&quot;: {
+    &quot;runtime&quot;: {
+      &quot;name&quot;: &quot;node&quot;,
+      &quot;version&quot;: &quot;v24.21.0&quot;
+    },
+    &quot;platform&quot;: &quot;linux&quot;,
+    &quot;arch&quot;: &quot;x64&quot;,
+    &quot;cpu&quot;: &quot;AMD EPYC 9V74 80-Core Processor&quot;,
+    &quot;config&quot;: {
+      &quot;backend&quot;: &quot;singlefile&quot;,
+      &quot;rows&quot;: 10000,
+      &quot;frequent&quot;: 500,
+      &quot;batch&quot;: 10000
+    },
+    &quot;pageCacheMiB&quot;: {
+      &quot;postgres&quot;: 98,
+      &quot;sqlite&quot;: 2,
+      &quot;adapterClean&quot;: 0
+    },
+    &quot;settings&quot;: [
+      {
+        &quot;name&quot;: &quot;fsync&quot;,
+        &quot;setting&quot;: &quot;off&quot;
+      },
+      {
+        &quot;name&quot;: &quot;full_page_writes&quot;,
+        &quot;setting&quot;: &quot;on&quot;
+      },
+      {
+        &quot;name&quot;: &quot;shared_buffers&quot;,
+        &quot;setting&quot;: &quot;12544&quot;
+      },
+      {
+        &quot;name&quot;: &quot;synchronous_commit&quot;,
+        &quot;setting&quot;: &quot;on&quot;
+      }
+    ]
+  },
+  &quot;nodefs&quot;: {
+    &quot;runtime&quot;: {
+      &quot;name&quot;: &quot;node&quot;,
+      &quot;version&quot;: &quot;v24.21.0&quot;
+    },
+    &quot;platform&quot;: &quot;linux&quot;,
+    &quot;arch&quot;: &quot;x64&quot;,
+    &quot;cpu&quot;: &quot;AMD EPYC 9V74 80-Core Processor&quot;,
+    &quot;config&quot;: {
+      &quot;backend&quot;: &quot;nodefs&quot;,
+      &quot;rows&quot;: 10000,
+      &quot;frequent&quot;: 500,
+      &quot;batch&quot;: 10000
+    },
+    &quot;pageCacheMiB&quot;: {
+      &quot;postgres&quot;: 100,
+      &quot;sqlite&quot;: 0,
+      &quot;adapterClean&quot;: 0
+    },
+    &quot;settings&quot;: [
+      {
+        &quot;name&quot;: &quot;fsync&quot;,
+        &quot;setting&quot;: &quot;off&quot;
+      },
+      {
+        &quot;name&quot;: &quot;full_page_writes&quot;,
+        &quot;setting&quot;: &quot;on&quot;
+      },
+      {
+        &quot;name&quot;: &quot;shared_buffers&quot;,
+        &quot;setting&quot;: &quot;12800&quot;
+      },
+      {
+        &quot;name&quot;: &quot;synchronous_commit&quot;,
+        &quot;setting&quot;: &quot;on&quot;
+      }
+    ]
+  }
+}</pre><details><summary>All raw results and excluded warm-ups</summary><pre>{
+  &quot;timestamp&quot;: &quot;2026-10-02T17:35:13.481Z&quot;,
+  &quot;repeats&quot;: 5,
+  &quot;environments&quot;: {
+    &quot;singlefile&quot;: {
+      &quot;runtime&quot;: {
+        &quot;name&quot;: &quot;node&quot;,
+        &quot;version&quot;: &quot;v24.21.0&quot;
+      },
+      &quot;platform&quot;: &quot;linux&quot;,
+      &quot;arch&quot;: &quot;x64&quot;,
+      &quot;cpu&quot;: &quot;AMD EPYC 9V74 80-Core Processor&quot;,
+      &quot;config&quot;: {
+        &quot;backend&quot;: &quot;singlefile&quot;,
+        &quot;rows&quot;: 10000,
+        &quot;frequent&quot;: 500,
+        &quot;batch&quot;: 10000
+      },
+      &quot;pageCacheMiB&quot;: {
+        &quot;postgres&quot;: 98,
+        &quot;sqlite&quot;: 2,
+        &quot;adapterClean&quot;: 0
+      },
+      &quot;settings&quot;: [
+        {
+          &quot;name&quot;: &quot;fsync&quot;,
+          &quot;setting&quot;: &quot;off&quot;
+        },
+        {
+          &quot;name&quot;: &quot;full_page_writes&quot;,
+          &quot;setting&quot;: &quot;on&quot;
+        },
+        {
+          &quot;name&quot;: &quot;shared_buffers&quot;,
+          &quot;setting&quot;: &quot;12544&quot;
+        },
+        {
+          &quot;name&quot;: &quot;synchronous_commit&quot;,
+          &quot;setting&quot;: &quot;on&quot;
+        }
+      ]
+    },
+    &quot;nodefs&quot;: {
+      &quot;runtime&quot;: {
+        &quot;name&quot;: &quot;node&quot;,
+        &quot;version&quot;: &quot;v24.21.0&quot;
+      },
+      &quot;platform&quot;: &quot;linux&quot;,
+      &quot;arch&quot;: &quot;x64&quot;,
+      &quot;cpu&quot;: &quot;AMD EPYC 9V74 80-Core Processor&quot;,
+      &quot;config&quot;: {
+        &quot;backend&quot;: &quot;nodefs&quot;,
+        &quot;rows&quot;: 10000,
+        &quot;frequent&quot;: 500,
+        &quot;batch&quot;: 10000
+      },
+      &quot;pageCacheMiB&quot;: {
+        &quot;postgres&quot;: 100,
+        &quot;sqlite&quot;: 0,
+        &quot;adapterClean&quot;: 0
+      },
+      &quot;settings&quot;: [
+        {
+          &quot;name&quot;: &quot;fsync&quot;,
+          &quot;setting&quot;: &quot;off&quot;
+        },
+        {
+          &quot;name&quot;: &quot;full_page_writes&quot;,
+          &quot;setting&quot;: &quot;on&quot;
+        },
+        {
+          &quot;name&quot;: &quot;shared_buffers&quot;,
+          &quot;setting&quot;: &quot;12800&quot;
+        },
+        {
+          &quot;name&quot;: &quot;synchronous_commit&quot;,
+          &quot;setting&quot;: &quot;on&quot;
+        }
+      ]
+    }
+  },
+  &quot;summary&quot;: [
+    {
+      &quot;workload&quot;: &quot;batchRead&quot;,
+      &quot;nodefsMs&quot;: 49.17707500000006,
+      &quot;singlefileMs&quot;: 51.31424799999991,
+      &quot;ratio&quot;: 1.0434587254325283
+    },
+    {
+      &quot;workload&quot;: &quot;batchInsert&quot;,
+      &quot;nodefsMs&quot;: 30.305020000000013,
+      &quot;singlefileMs&quot;: 33.340464999999995,
+      &quot;ratio&quot;: 1.100163108290309
+    },
+    {
+      &quot;workload&quot;: &quot;batchUpdate&quot;,
+      &quot;nodefsMs&quot;: 49.034598999999844,
+      &quot;singlefileMs&quot;: 53.259634000000005,
+      &quot;ratio&quot;: 1.0861643632489006
+    },
+    {
+      &quot;workload&quot;: &quot;frequentRead&quot;,
+      &quot;nodefsMs&quot;: 181.13082399999985,
+      &quot;singlefileMs&quot;: 170.04087299999992,
+      &quot;ratio&quot;: 0.9387738058321872
+    },
+    {
+      &quot;workload&quot;: &quot;frequentInsert&quot;,
+      &quot;nodefsMs&quot;: 154.03990199999998,
+      &quot;singlefileMs&quot;: 160.29980699999987,
+      &quot;ratio&quot;: 1.0406382042491815
+    },
+    {
+      &quot;workload&quot;: &quot;frequentUpdate&quot;,
+      &quot;nodefsMs&quot;: 182.67396400000007,
+      &quot;singlefileMs&quot;: 192.32857699999977,
+      &quot;ratio&quot;: 1.0528516094389877
+    }
+  ],
+  &quot;records&quot;: [
+    {
+      &quot;backend&quot;: &quot;nodefs&quot;,
+      &quot;iteration&quot;: 0,
+      &quot;samples&quot;: [
+        {
+          &quot;workload&quot;: &quot;batchRead&quot;,
+          &quot;acknowledgedMs&quot;: 53.94370600000002,
+          &quot;settledMs&quot;: 53.94671000000017,
+          &quot;filesystemReads&quot;: null,
+          &quot;rows&quot;: 10000,
+          &quot;checksum&quot;: &quot;4995000&quot;
+        },
+        {
+          &quot;workload&quot;: &quot;batchInsert&quot;,
+          &quot;acknowledgedMs&quot;: 31.546674000000166,
+          &quot;settledMs&quot;: 31.55024900000012,
+          &quot;filesystemReads&quot;: null,
+          &quot;rows&quot;: 20000,
+          &quot;checksum&quot;: &quot;9990000&quot;
+        },
+        {
+          &quot;workload&quot;: &quot;batchUpdate&quot;,
+          &quot;acknowledgedMs&quot;: 54.92277799999988,
+          &quot;settledMs&quot;: 54.925060999999914,
+          &quot;filesystemReads&quot;: null,
+          &quot;rows&quot;: 20000,
+          &quot;checksum&quot;: &quot;10000000&quot;
+        },
+        {
+          &quot;workload&quot;: &quot;frequentRead&quot;,
+          &quot;acknowledgedMs&quot;: 194.27676499999984,
+          &quot;settledMs&quot;: 194.28028999999992,
+          &quot;filesystemReads&quot;: null,
+          &quot;rows&quot;: 20000,
+          &quot;checksum&quot;: &quot;10000000&quot;
+        },
+        {
+          &quot;workload&quot;: &quot;frequentInsert&quot;,
+          &quot;acknowledgedMs&quot;: 155.46342699999968,
+          &quot;settledMs&quot;: 155.46832499999982,
+          &quot;filesystemReads&quot;: null,
+          &quot;rows&quot;: 20500,
+          &quot;checksum&quot;: &quot;10124750&quot;
+        },
+        {
+          &quot;workload&quot;: &quot;frequentUpdate&quot;,
+          &quot;acknowledgedMs&quot;: 188.89994799999977,
+          &quot;settledMs&quot;: 188.90711899999997,
+          &quot;filesystemReads&quot;: null,
+          &quot;rows&quot;: 20500,
+          &quot;checksum&quot;: &quot;10125250&quot;
+        }
+      ],
+      &quot;storage&quot;: {
+        &quot;bytes&quot;: 42246182
+      }
+    },
+    {
+      &quot;backend&quot;: &quot;singlefile&quot;,
+      &quot;iteration&quot;: 0,
+      &quot;samples&quot;: [
+        {
+          &quot;workload&quot;: &quot;batchRead&quot;,
+          &quot;acknowledgedMs&quot;: 53.8998660000002,
+          &quot;settledMs&quot;: 53.909270000000106,
+          &quot;filesystemReads&quot;: 0,
+          &quot;rows&quot;: 10000,
+          &quot;checksum&quot;: &quot;4995000&quot;
+        },
+        {
+          &quot;workload&quot;: &quot;batchInsert&quot;,
+          &quot;acknowledgedMs&quot;: 32.41355099999987,
+          &quot;settledMs&quot;: 32.45277999999985,
+          &quot;filesystemReads&quot;: 0,
+          &quot;rows&quot;: 20000,
+          &quot;checksum&quot;: &quot;9990000&quot;
+        },
+        {
+          &quot;workload&quot;: &quot;batchUpdate&quot;,
+          &quot;acknowledgedMs&quot;: 53.63527900000008,
+          &quot;settledMs&quot;: 53.65916500000003,
+          &quot;filesystemReads&quot;: 2,
+          &quot;rows&quot;: 20000,
+          &quot;checksum&quot;: &quot;10000000&quot;
+        },
+        {
+          &quot;workload&quot;: &quot;frequentRead&quot;,
+          &quot;acknowledgedMs&quot;: 170.57292499999994,
+          &quot;settledMs&quot;: 170.57871399999976,
+          &quot;filesystemReads&quot;: 0,
+          &quot;rows&quot;: 20000,
+          &quot;checksum&quot;: &quot;10000000&quot;
+        },
+        {
+          &quot;workload&quot;: &quot;frequentInsert&quot;,
+          &quot;acknowledgedMs&quot;: 169.49417300000005,
+          &quot;settledMs&quot;: 169.50288600000022,
+          &quot;filesystemReads&quot;: 0,
+          &quot;rows&quot;: 20500,
+          &quot;checksum&quot;: &quot;10124750&quot;
+        },
+        {
+          &quot;workload&quot;: &quot;frequentUpdate&quot;,
+          &quot;acknowledgedMs&quot;: 192.31415500000003,
+          &quot;settledMs&quot;: 192.32857699999977,
+          &quot;filesystemReads&quot;: 0,
+          &quot;rows&quot;: 20500,
+          &quot;checksum&quot;: &quot;10125250&quot;
+        }
+      ],
+      &quot;storage&quot;: {
+        &quot;bytes&quot;: 42786816
+      }
+    },
+    {
+      &quot;backend&quot;: &quot;singlefile&quot;,
+      &quot;iteration&quot;: 1,
+      &quot;samples&quot;: [
+        {
+          &quot;workload&quot;: &quot;batchRead&quot;,
+          &quot;acknowledgedMs&quot;: 51.814460000000054,
+          &quot;settledMs&quot;: 51.824746000000005,
+          &quot;filesystemReads&quot;: 0,
+          &quot;rows&quot;: 10000,
+          &quot;checksum&quot;: &quot;4995000&quot;
+        },
+        {
+          &quot;workload&quot;: &quot;batchInsert&quot;,
+          &quot;acknowledgedMs&quot;: 31.743131999999832,
+          &quot;settledMs&quot;: 31.79282699999999,
+          &quot;filesystemReads&quot;: 0,
+          &quot;rows&quot;: 20000,
+          &quot;checksum&quot;: &quot;9990000&quot;
+        },
+        {
+          &quot;workload&quot;: &quot;batchUpdate&quot;,
+          &quot;acknowledgedMs&quot;: 53.22961899999996,
+          &quot;settledMs&quot;: 53.233664999999974,
+          &quot;filesystemReads&quot;: 2,
+          &quot;rows&quot;: 20000,
+          &quot;checksum&quot;: &quot;10000000&quot;
+        },
+        {
+          &quot;workload&quot;: &quot;frequentRead&quot;,
+          &quot;acknowledgedMs&quot;: 170.03588600000012,
+          &quot;settledMs&quot;: 170.04087299999992,
+          &quot;filesystemReads&quot;: 0,
+          &quot;rows&quot;: 20000,
+          &quot;checksum&quot;: &quot;10000000&quot;
+        },
+        {
+          &quot;workload&quot;: &quot;frequentInsert&quot;,
+          &quot;acknowledgedMs&quot;: 153.744999,
+          &quot;settledMs&quot;: 153.75401299999976,
+          &quot;filesystemReads&quot;: 0,
+          &quot;rows&quot;: 20500,
+          &quot;checksum&quot;: &quot;10124750&quot;
+        },
+        {
+          &quot;workload&quot;: &quot;frequentUpdate&quot;,
+          &quot;acknowledgedMs&quot;: 182.29223600000023,
+          &quot;settledMs&quot;: 182.3036530000004,
+          &quot;filesystemReads&quot;: 0,
+          &quot;rows&quot;: 20500,
+          &quot;checksum&quot;: &quot;10125250&quot;
+        }
+      ],
+      &quot;storage&quot;: {
+        &quot;bytes&quot;: 42786816
+      }
+    },
+    {
+      &quot;backend&quot;: &quot;nodefs&quot;,
+      &quot;iteration&quot;: 1,
+      &quot;samples&quot;: [
+        {
+          &quot;workload&quot;: &quot;batchRead&quot;,
+          &quot;acknowledgedMs&quot;: 49.17346900000007,
+          &quot;settledMs&quot;: 49.17707500000006,
+          &quot;filesystemReads&quot;: null,
+          &quot;rows&quot;: 10000,
+          &quot;checksum&quot;: &quot;4995000&quot;
+        },
+        {
+          &quot;workload&quot;: &quot;batchInsert&quot;,
+          &quot;acknowledgedMs&quot;: 29.985980000000154,
+          &quot;settledMs&quot;: 29.989696000000095,
+          &quot;filesystemReads&quot;: null,
+          &quot;rows&quot;: 20000,
+          &quot;checksum&quot;: &quot;9990000&quot;
+        },
+        {
+          &quot;workload&quot;: &quot;batchUpdate&quot;,
+          &quot;acknowledgedMs&quot;: 47.42022199999997,
+          &quot;settledMs&quot;: 47.42260600000009,
+          &quot;filesystemReads&quot;: null,
+          &quot;rows&quot;: 20000,
+          &quot;checksum&quot;: &quot;10000000&quot;
+        },
+        {
+          &quot;workload&quot;: &quot;frequentRead&quot;,
+          &quot;acknowledgedMs&quot;: 162.00624399999992,
+          &quot;settledMs&quot;: 162.00980000000004,
+          &quot;filesystemReads&quot;: null,
+          &quot;rows&quot;: 20000,
+          &quot;checksum&quot;: &quot;10000000&quot;
+        },
+        {
+          &quot;workload&quot;: &quot;frequentInsert&quot;,
+          &quot;acknowledgedMs&quot;: 140.24752800000033,
+          &quot;settledMs&quot;: 140.25271600000042,
+          &quot;filesystemReads&quot;: null,
+          &quot;rows&quot;: 20500,
+          &quot;checksum&quot;: &quot;10124750&quot;
+        },
+        {
+          &quot;workload&quot;: &quot;frequentUpdate&quot;,
+          &quot;acknowledgedMs&quot;: 163.09335999999985,
+          &quot;settledMs&quot;: 163.09927799999969,
+          &quot;filesystemReads&quot;: null,
+          &quot;rows&quot;: 20500,
+          &quot;checksum&quot;: &quot;10125250&quot;
+        }
+      ],
+      &quot;storage&quot;: {
+        &quot;bytes&quot;: 42246182
+      }
+    },
+    {
+      &quot;backend&quot;: &quot;nodefs&quot;,
+      &quot;iteration&quot;: 2,
+      &quot;samples&quot;: [
+        {
+          &quot;workload&quot;: &quot;batchRead&quot;,
+          &quot;acknowledgedMs&quot;: 47.924080000000004,
+          &quot;settledMs&quot;: 47.927374999999984,
+          &quot;filesystemReads&quot;: null,
+          &quot;rows&quot;: 10000,
+          &quot;checksum&quot;: &quot;4995000&quot;
+        },
+        {
+          &quot;workload&quot;: &quot;batchInsert&quot;,
+          &quot;acknowledgedMs&quot;: 29.084674999999834,
+          &quot;settledMs&quot;: 29.088310999999976,
+          &quot;filesystemReads&quot;: null,
+          &quot;rows&quot;: 20000,
+          &quot;checksum&quot;: &quot;9990000&quot;
+        },
+        {
+          &quot;workload&quot;: &quot;batchUpdate&quot;,
+          &quot;acknowledgedMs&quot;: 46.388149999999996,
+          &quot;settledMs&quot;: 46.390063000000055,
+          &quot;filesystemReads&quot;: null,
+          &quot;rows&quot;: 20000,
+          &quot;checksum&quot;: &quot;10000000&quot;
+        },
+        {
+          &quot;workload&quot;: &quot;frequentRead&quot;,
+          &quot;acknowledgedMs&quot;: 180.30342399999995,
+          &quot;settledMs&quot;: 180.3076910000002,
+          &quot;filesystemReads&quot;: null,
+          &quot;rows&quot;: 20000,
+          &quot;checksum&quot;: &quot;10000000&quot;
+        },
+        {
+          &quot;workload&quot;: &quot;frequentInsert&quot;,
+          &quot;acknowledgedMs&quot;: 154.03544599999987,
+          &quot;settledMs&quot;: 154.03990199999998,
+          &quot;filesystemReads&quot;: null,
+          &quot;rows&quot;: 20500,
+          &quot;checksum&quot;: &quot;10124750&quot;
+        },
+        {
+          &quot;workload&quot;: &quot;frequentUpdate&quot;,
+          &quot;acknowledgedMs&quot;: 195.07035399999995,
+          &quot;settledMs&quot;: 195.07661299999972,
+          &quot;filesystemReads&quot;: null,
+          &quot;rows&quot;: 20500,
+          &quot;checksum&quot;: &quot;10125250&quot;
+        }
+      ],
+      &quot;storage&quot;: {
+        &quot;bytes&quot;: 42246182
+      }
+    },
+    {
+      &quot;backend&quot;: &quot;singlefile&quot;,
+      &quot;iteration&quot;: 2,
+      &quot;samples&quot;: [
+        {
+          &quot;workload&quot;: &quot;batchRead&quot;,
+          &quot;acknowledgedMs&quot;: 49.44463700000006,
+          &quot;settledMs&quot;: 49.453269999999975,
+          &quot;filesystemReads&quot;: 0,
+          &quot;rows&quot;: 10000,
+          &quot;checksum&quot;: &quot;4995000&quot;
+        },
+        {
+          &quot;workload&quot;: &quot;batchInsert&quot;,
+          &quot;acknowledgedMs&quot;: 33.28916800000002,
+          &quot;settledMs&quot;: 33.340464999999995,
+          &quot;filesystemReads&quot;: 0,
+          &quot;rows&quot;: 20000,
+          &quot;checksum&quot;: &quot;9990000&quot;
+        },
+        {
+          &quot;workload&quot;: &quot;batchUpdate&quot;,
+          &quot;acknowledgedMs&quot;: 53.25426600000014,
+          &quot;settledMs&quot;: 53.259634000000005,
+          &quot;filesystemReads&quot;: 2,
+          &quot;rows&quot;: 20000,
+          &quot;checksum&quot;: &quot;10000000&quot;
+        },
+        {
+          &quot;workload&quot;: &quot;frequentRead&quot;,
+          &quot;acknowledgedMs&quot;: 167.67408899999987,
+          &quot;settledMs&quot;: 167.67933700000026,
+          &quot;filesystemReads&quot;: 0,
+          &quot;rows&quot;: 20000,
+          &quot;checksum&quot;: &quot;10000000&quot;
+        },
+        {
+          &quot;workload&quot;: &quot;frequentInsert&quot;,
+          &quot;acknowledgedMs&quot;: 160.28994300000022,
+          &quot;settledMs&quot;: 160.29980699999987,
+          &quot;filesystemReads&quot;: 0,
+          &quot;rows&quot;: 20500,
+          &quot;checksum&quot;: &quot;10124750&quot;
+        },
+        {
+          &quot;workload&quot;: &quot;frequentUpdate&quot;,
+          &quot;acknowledgedMs&quot;: 193.3727490000001,
+          &quot;settledMs&quot;: 193.38400599999977,
+          &quot;filesystemReads&quot;: 0,
+          &quot;rows&quot;: 20500,
+          &quot;checksum&quot;: &quot;10125250&quot;
+        }
+      ],
+      &quot;storage&quot;: {
+        &quot;bytes&quot;: 42786816
+      }
+    },
+    {
+      &quot;backend&quot;: &quot;singlefile&quot;,
+      &quot;iteration&quot;: 3,
+      &quot;samples&quot;: [
+        {
+          &quot;workload&quot;: &quot;batchRead&quot;,
+          &quot;acknowledgedMs&quot;: 51.30522399999995,
+          &quot;settledMs&quot;: 51.31424799999991,
+          &quot;filesystemReads&quot;: 0,
+          &quot;rows&quot;: 10000,
+          &quot;checksum&quot;: &quot;4995000&quot;
+        },
+        {
+          &quot;workload&quot;: &quot;batchInsert&quot;,
+          &quot;acknowledgedMs&quot;: 33.67463799999996,
+          &quot;settledMs&quot;: 33.750831999999946,
+          &quot;filesystemReads&quot;: 0,
+          &quot;rows&quot;: 20000,
+          &quot;checksum&quot;: &quot;9990000&quot;
+        },
+        {
+          &quot;workload&quot;: &quot;batchUpdate&quot;,
+          &quot;acknowledgedMs&quot;: 54.04326199999991,
+          &quot;settledMs&quot;: 54.046937999999955,
+          &quot;filesystemReads&quot;: 2,
+          &quot;rows&quot;: 20000,
+          &quot;checksum&quot;: &quot;10000000&quot;
+        },
+        {
+          &quot;workload&quot;: &quot;frequentRead&quot;,
+          &quot;acknowledgedMs&quot;: 181.725328,
+          &quot;settledMs&quot;: 181.730546,
+          &quot;filesystemReads&quot;: 0,
+          &quot;rows&quot;: 20000,
+          &quot;checksum&quot;: &quot;10000000&quot;
+        },
+        {
+          &quot;workload&quot;: &quot;frequentInsert&quot;,
+          &quot;acknowledgedMs&quot;: 163.6974150000001,
+          &quot;settledMs&quot;: 163.70557700000018,
+          &quot;filesystemReads&quot;: 0,
+          &quot;rows&quot;: 20500,
+          &quot;checksum&quot;: &quot;10124750&quot;
+        },
+        {
+          &quot;workload&quot;: &quot;frequentUpdate&quot;,
+          &quot;acknowledgedMs&quot;: 197.768016,
+          &quot;settledMs&quot;: 197.78008499999987,
+          &quot;filesystemReads&quot;: 0,
+          &quot;rows&quot;: 20500,
+          &quot;checksum&quot;: &quot;10125250&quot;
+        }
+      ],
+      &quot;storage&quot;: {
+        &quot;bytes&quot;: 42786816
+      }
+    },
+    {
+      &quot;backend&quot;: &quot;nodefs&quot;,
+      &quot;iteration&quot;: 3,
+      &quot;samples&quot;: [
+        {
+          &quot;workload&quot;: &quot;batchRead&quot;,
+          &quot;acknowledgedMs&quot;: 47.94610200000011,
+          &quot;settledMs&quot;: 47.949767000000065,
+          &quot;filesystemReads&quot;: null,
+          &quot;rows&quot;: 10000,
+          &quot;checksum&quot;: &quot;4995000&quot;
+        },
+        {
+          &quot;workload&quot;: &quot;batchInsert&quot;,
+          &quot;acknowledgedMs&quot;: 32.8125,
+          &quot;settledMs&quot;: 32.81939000000011,
+          &quot;filesystemReads&quot;: null,
+          &quot;rows&quot;: 20000,
+          &quot;checksum&quot;: &quot;9990000&quot;
+        },
+        {
+          &quot;workload&quot;: &quot;batchUpdate&quot;,
+          &quot;acknowledgedMs&quot;: 54.86842299999989,
+          &quot;settledMs&quot;: 54.87112699999989,
+          &quot;filesystemReads&quot;: null,
+          &quot;rows&quot;: 20000,
+          &quot;checksum&quot;: &quot;10000000&quot;
+        },
+        {
+          &quot;workload&quot;: &quot;frequentRead&quot;,
+          &quot;acknowledgedMs&quot;: 181.12714800000003,
+          &quot;settledMs&quot;: 181.13082399999985,
+          &quot;filesystemReads&quot;: null,
+          &quot;rows&quot;: 20000,
+          &quot;checksum&quot;: &quot;10000000&quot;
+        },
+        {
+          &quot;workload&quot;: &quot;frequentInsert&quot;,
+          &quot;acknowledgedMs&quot;: 144.73824000000013,
+          &quot;settledMs&quot;: 144.7422660000002,
+          &quot;filesystemReads&quot;: null,
+          &quot;rows&quot;: 20500,
+          &quot;checksum&quot;: &quot;10124750&quot;
+        },
+        {
+          &quot;workload&quot;: &quot;frequentUpdate&quot;,
+          &quot;acknowledgedMs&quot;: 165.73697200000015,
+          &quot;settledMs&quot;: 165.74376200000006,
+          &quot;filesystemReads&quot;: null,
+          &quot;rows&quot;: 20500,
+          &quot;checksum&quot;: &quot;10125250&quot;
+        }
+      ],
+      &quot;storage&quot;: {
+        &quot;bytes&quot;: 42246182
+      }
+    },
+    {
+      &quot;backend&quot;: &quot;nodefs&quot;,
+      &quot;iteration&quot;: 4,
+      &quot;samples&quot;: [
+        {
+          &quot;workload&quot;: &quot;batchRead&quot;,
+          &quot;acknowledgedMs&quot;: 50.49570700000004,
+          &quot;settledMs&quot;: 50.49829100000011,
+          &quot;filesystemReads&quot;: null,
+          &quot;rows&quot;: 10000,
+          &quot;checksum&quot;: &quot;4995000&quot;
+        },
+        {
+          &quot;workload&quot;: &quot;batchInsert&quot;,
+          &quot;acknowledgedMs&quot;: 30.3015640000001,
+          &quot;settledMs&quot;: 30.305020000000013,
+          &quot;filesystemReads&quot;: null,
+          &quot;rows&quot;: 20000,
+          &quot;checksum&quot;: &quot;9990000&quot;
+        },
+        {
+          &quot;workload&quot;: &quot;batchUpdate&quot;,
+          &quot;acknowledgedMs&quot;: 49.032285,
+          &quot;settledMs&quot;: 49.034598999999844,
+          &quot;filesystemReads&quot;: null,
+          &quot;rows&quot;: 20000,
+          &quot;checksum&quot;: &quot;10000000&quot;
+        },
+        {
+          &quot;workload&quot;: &quot;frequentRead&quot;,
+          &quot;acknowledgedMs&quot;: 184.18804799999998,
+          &quot;settledMs&quot;: 184.19260499999973,
+          &quot;filesystemReads&quot;: null,
+          &quot;rows&quot;: 20000,
+          &quot;checksum&quot;: &quot;10000000&quot;
+        },
+        {
+          &quot;workload&quot;: &quot;frequentInsert&quot;,
+          &quot;acknowledgedMs&quot;: 162.52144099999987,
+          &quot;settledMs&quot;: 162.52546699999994,
+          &quot;filesystemReads&quot;: null,
+          &quot;rows&quot;: 20500,
+          &quot;checksum&quot;: &quot;10124750&quot;
+        },
+        {
+          &quot;workload&quot;: &quot;frequentUpdate&quot;,
+          &quot;acknowledgedMs&quot;: 182.66792499999974,
+          &quot;settledMs&quot;: 182.67396400000007,
+          &quot;filesystemReads&quot;: null,
+          &quot;rows&quot;: 20500,
+          &quot;checksum&quot;: &quot;10125250&quot;
+        }
+      ],
+      &quot;storage&quot;: {
+        &quot;bytes&quot;: 42246182
+      }
+    },
+    {
+      &quot;backend&quot;: &quot;singlefile&quot;,
+      &quot;iteration&quot;: 4,
+      &quot;samples&quot;: [
+        {
+          &quot;workload&quot;: &quot;batchRead&quot;,
+          &quot;acknowledgedMs&quot;: 46.949370000000044,
+          &quot;settledMs&quot;: 46.95878400000015,
+          &quot;filesystemReads&quot;: 0,
+          &quot;rows&quot;: 10000,
+          &quot;checksum&quot;: &quot;4995000&quot;
+        },
+        {
+          &quot;workload&quot;: &quot;batchInsert&quot;,
+          &quot;acknowledgedMs&quot;: 33.411440000000084,
+          &quot;settledMs&quot;: 33.475325999999995,
+          &quot;filesystemReads&quot;: 0,
+          &quot;rows&quot;: 20000,
+          &quot;checksum&quot;: &quot;9990000&quot;
+        },
+        {
+          &quot;workload&quot;: &quot;batchUpdate&quot;,
+          &quot;acknowledgedMs&quot;: 50.600290000000086,
+          &quot;settledMs&quot;: 50.60490700000014,
+          &quot;filesystemReads&quot;: 2,
+          &quot;rows&quot;: 20000,
+          &quot;checksum&quot;: &quot;10000000&quot;
+        },
+        {
+          &quot;workload&quot;: &quot;frequentRead&quot;,
+          &quot;acknowledgedMs&quot;: 163.87569199999984,
+          &quot;settledMs&quot;: 163.88112999999998,
+          &quot;filesystemReads&quot;: 0,
+          &quot;rows&quot;: 20000,
+          &quot;checksum&quot;: &quot;10000000&quot;
+        },
+        {
+          &quot;workload&quot;: &quot;frequentInsert&quot;,
+          &quot;acknowledgedMs&quot;: 155.52724500000022,
+          &quot;settledMs&quot;: 155.5379109999999,
+          &quot;filesystemReads&quot;: 0,
+          &quot;rows&quot;: 20500,
+          &quot;checksum&quot;: &quot;10124750&quot;
+        },
+        {
+          &quot;workload&quot;: &quot;frequentUpdate&quot;,
+          &quot;acknowledgedMs&quot;: 180.34628199999997,
+          &quot;settledMs&quot;: 180.35807999999997,
+          &quot;filesystemReads&quot;: 0,
+          &quot;rows&quot;: 20500,
+          &quot;checksum&quot;: &quot;10125250&quot;
+        }
+      ],
+      &quot;storage&quot;: {
+        &quot;bytes&quot;: 42786816
+      }
+    }
+  ],
+  &quot;warmups&quot;: [
+    {
+      &quot;backend&quot;: &quot;singlefile&quot;,
+      &quot;iteration&quot;: -1,
+      &quot;samples&quot;: [
+        {
+          &quot;workload&quot;: &quot;batchRead&quot;,
+          &quot;acknowledgedMs&quot;: 54.427602000000206,
+          &quot;settledMs&quot;: 54.43714600000021,
+          &quot;filesystemReads&quot;: 0,
+          &quot;rows&quot;: 10000,
+          &quot;checksum&quot;: &quot;4995000&quot;
+        },
+        {
+          &quot;workload&quot;: &quot;batchInsert&quot;,
+          &quot;acknowledgedMs&quot;: 34.933530999999675,
+          &quot;settledMs&quot;: 35.01972099999966,
+          &quot;filesystemReads&quot;: 0,
+          &quot;rows&quot;: 20000,
+          &quot;checksum&quot;: &quot;9990000&quot;
+        },
+        {
+          &quot;workload&quot;: &quot;batchUpdate&quot;,
+          &quot;acknowledgedMs&quot;: 65.09382400000004,
+          &quot;settledMs&quot;: 65.09942200000023,
+          &quot;filesystemReads&quot;: 2,
+          &quot;rows&quot;: 20000,
+          &quot;checksum&quot;: &quot;10000000&quot;
+        },
+        {
+          &quot;workload&quot;: &quot;frequentRead&quot;,
+          &quot;acknowledgedMs&quot;: 216.09291900000017,
+          &quot;settledMs&quot;: 216.09881799999994,
+          &quot;filesystemReads&quot;: 0,
+          &quot;rows&quot;: 20000,
+          &quot;checksum&quot;: &quot;10000000&quot;
+        },
+        {
+          &quot;workload&quot;: &quot;frequentInsert&quot;,
+          &quot;acknowledgedMs&quot;: 179.66625099999965,
+          &quot;settledMs&quot;: 179.67506400000002,
+          &quot;filesystemReads&quot;: 0,
+          &quot;rows&quot;: 20500,
+          &quot;checksum&quot;: &quot;10124750&quot;
+        },
+        {
+          &quot;workload&quot;: &quot;frequentUpdate&quot;,
+          &quot;acknowledgedMs&quot;: 179.0124169999999,
+          &quot;settledMs&quot;: 179.02497600000015,
+          &quot;filesystemReads&quot;: 0,
+          &quot;rows&quot;: 20500,
+          &quot;checksum&quot;: &quot;10125250&quot;
+        }
+      ],
+      &quot;storage&quot;: {
+        &quot;bytes&quot;: 42786816
+      }
+    },
+    {
+      &quot;backend&quot;: &quot;nodefs&quot;,
+      &quot;iteration&quot;: -1,
+      &quot;samples&quot;: [
+        {
+          &quot;workload&quot;: &quot;batchRead&quot;,
+          &quot;acknowledgedMs&quot;: 51.01187499999992,
+          &quot;settledMs&quot;: 51.01493899999991,
+          &quot;filesystemReads&quot;: null,
+          &quot;rows&quot;: 10000,
+          &quot;checksum&quot;: &quot;4995000&quot;
+        },
+        {
+          &quot;workload&quot;: &quot;batchInsert&quot;,
+          &quot;acknowledgedMs&quot;: 30.36370899999997,
+          &quot;settledMs&quot;: 30.36916700000006,
+          &quot;filesystemReads&quot;: null,
+          &quot;rows&quot;: 20000,
+          &quot;checksum&quot;: &quot;9990000&quot;
+        },
+        {
+          &quot;workload&quot;: &quot;batchUpdate&quot;,
+          &quot;acknowledgedMs&quot;: 50.3598750000001,
+          &quot;settledMs&quot;: 50.36200800000006,
+          &quot;filesystemReads&quot;: null,
+          &quot;rows&quot;: 20000,
+          &quot;checksum&quot;: &quot;10000000&quot;
+        },
+        {
+          &quot;workload&quot;: &quot;frequentRead&quot;,
+          &quot;acknowledgedMs&quot;: 179.29921700000023,
+          &quot;settledMs&quot;: 179.3027030000003,
+          &quot;filesystemReads&quot;: null,
+          &quot;rows&quot;: 20000,
+          &quot;checksum&quot;: &quot;10000000&quot;
+        },
+        {
+          &quot;workload&quot;: &quot;frequentInsert&quot;,
+          &quot;acknowledgedMs&quot;: 142.90343600000006,
+          &quot;settledMs&quot;: 142.90775200000007,
+          &quot;filesystemReads&quot;: null,
+          &quot;rows&quot;: 20500,
+          &quot;checksum&quot;: &quot;10124750&quot;
+        },
+        {
+          &quot;workload&quot;: &quot;frequentUpdate&quot;,
+          &quot;acknowledgedMs&quot;: 167.8355059999999,
+          &quot;settledMs&quot;: 167.84086400000024,
+          &quot;filesystemReads&quot;: null,
+          &quot;rows&quot;: 20500,
+          &quot;checksum&quot;: &quot;10125250&quot;
+        }
+      ],
+      &quot;storage&quot;: {
+        &quot;bytes&quot;: 42246182
+      }
+    }
+  ],
+  &quot;notes&quot;: [
+    &quot;One complete excluded warm-up per backend. Fresh process/database per measured suite. Backend order alternates. Startup and verification excluded from operation-only times. Includes pending persistence flush.&quot;,
+    &quot;Warm reads: working set fits PostgreSQL cache. 100 MiB configured page-cache budget: NodeFS PostgreSQL 100 MiB; singlefile PostgreSQL 98 MiB + SQLite 2 MiB. Adapter clean cache disabled. Not a total process RAM cap.&quot;,
+    &quot;SingleFileFS SQLite synchronous=FULL versus upstream NodeFS PostgreSQL fsync=off. This is not equal hardware durability. OS cache not cleared; no NVMe-specific performance claim.&quot;,
+    &quot;All six workloads, raw samples and warm-ups retained; no performance gate or cherry-picked samples.&quot;
+  ]
+}</pre></details></html>

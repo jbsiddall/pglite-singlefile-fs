@@ -1,0 +1,59 @@
+name: Large database benchmark
+
+on:
+  workflow_dispatch:
+    inputs:
+      size_gib:
+        description: Approximate PostgreSQL database size in GiB
+        required: true
+        default: '5'
+        type: choice
+        options: ['5', '1']
+      repeats:
+        description: Measured join repetitions per configuration
+        required: true
+        default: '3'
+        type: choice
+        options: ['3', '5']
+
+permissions:
+  contents: read
+
+jobs:
+  benchmark:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    env:
+      BENCH_RUNTIME: node
+      TEST_RUNTIME: node
+      TEST_RUNTIME_VERSION: '24.21.0'
+      BENCH_RUNTIME_VERSION: '24.21.0'
+      EXPECTED_ARCH: x64
+      BIG_BENCH_SIZE_GIB: ${{ inputs.size_gib }}
+      BIG_BENCH_REPEATS: ${{ inputs.repeats }}
+      CI_REPORT_LABEL: large-node-24.21.0-ubuntu-24.04
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: '24.21.0'
+          cache: npm
+      - run: node scripts/ci-environment.mjs
+      - run: npm ci --ignore-scripts
+      - run: npm run build
+      - name: Two-table joins, with and without indexes, against NodeFS
+        run: npm run bench:big
+      - name: Upload complete observations
+        if: always()
+        id: reports
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: reports-large-node-24.21.0-${{ inputs.size_gib }}GiB
+          path: reports/
+          if-no-files-found: error
+          retention-days: 90
+      - name: Link reports in job summary
+        if: always()
+        env:
+          REPORT_URL: ${{ steps.reports.outputs.artifact-url }}
+        run: node scripts/ci-summary.mjs

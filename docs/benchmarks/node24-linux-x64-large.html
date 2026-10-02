@@ -1,0 +1,596 @@
+<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>PGlite filesystem benchmark</title><style>body{font:16px system-ui;max-width:1000px;margin:40px auto;padding:0 20px;color:#172033;background:#f7f9fc}table{border-collapse:collapse;width:100%;background:white}th,td{padding:12px;border-bottom:1px solid #d8e0eb;text-align:left}th{background:#e8eef8}pre{overflow:auto;background:#fff;padding:16px}li{margin:10px 0}small{color:#536174}</style><h1>PGlite filesystem benchmark</h1><p>Elapsed-time ratio: adapter ÷ built-in NodeFS. Lower is better; 1× is equal.</p><small>2026-10-02T17:37:33.881Z · 3 measured repetitions</small><table><thead><tr><th>Workload</th><th>NodeFS median (ms)</th><th>SingleFileFS median (ms)</th><th>Ratio</th></tr></thead><tbody><tr><td>joinWithoutIndex</td><td>99.518</td><td>159.256</td><td>1.600×</td></tr><tr><td>joinWithIndex</td><td>0.535</td><td>0.549</td><td>1.027×</td></tr></tbody></table><h2>Interpretation and limitations</h2><ul><li>Two application tables. PostgreSQL total relation sizes (including TOAST) reach at least 5 GiB before index creation. Physical backend sizes separately measured; adapter file need not equal logical PostgreSQL size. Peak loading storage/WAL sizes are observed only at loading batch boundaries and may miss intra-batch or later index/checkpoint peaks.</li><li>No event join-key index in first phase; indexed customers and indexed events in second. Explicit plans saved. Same selective customer join avoids a pathological Cartesian join.</li><li>One excluded warm-up per join phase. OS cache not cleared. Backends run sequentially once, so environmental/order effects remain; not a cross-machine performance guarantee.</li><li>Payload is one cryptographically random base64 value reused across rows, resisting per-value PostgreSQL compression; storage layers do not deduplicate it. Joins read keys/amounts, not the complete payload: this checks large database operation, not a full 5 GiB payload scan.</li><li>100 MiB configured page-cache budget, not a total RAM cap. NodeFS fsync=off versus SQLite synchronous=FULL; hardware durability differs.</li></ul><h2>Environment</h2><pre>{
+  &quot;nodefs&quot;: {
+    &quot;runtime&quot;: {
+      &quot;name&quot;: &quot;node&quot;,
+      &quot;version&quot;: &quot;v24.21.0&quot;
+    },
+    &quot;platform&quot;: &quot;linux&quot;,
+    &quot;arch&quot;: &quot;x64&quot;,
+    &quot;cpu&quot;: &quot;AMD EPYC 9V74 80-Core Processor&quot;,
+    &quot;settings&quot;: [
+      {
+        &quot;name&quot;: &quot;fsync&quot;,
+        &quot;setting&quot;: &quot;off&quot;
+      },
+      {
+        &quot;name&quot;: &quot;shared_buffers&quot;,
+        &quot;setting&quot;: &quot;12800&quot;
+      },
+      {
+        &quot;name&quot;: &quot;work_mem&quot;,
+        &quot;setting&quot;: &quot;32768&quot;
+      }
+    ]
+  },
+  &quot;singlefile&quot;: {
+    &quot;runtime&quot;: {
+      &quot;name&quot;: &quot;node&quot;,
+      &quot;version&quot;: &quot;v24.21.0&quot;
+    },
+    &quot;platform&quot;: &quot;linux&quot;,
+    &quot;arch&quot;: &quot;x64&quot;,
+    &quot;cpu&quot;: &quot;AMD EPYC 9V74 80-Core Processor&quot;,
+    &quot;settings&quot;: [
+      {
+        &quot;name&quot;: &quot;fsync&quot;,
+        &quot;setting&quot;: &quot;off&quot;
+      },
+      {
+        &quot;name&quot;: &quot;shared_buffers&quot;,
+        &quot;setting&quot;: &quot;12544&quot;
+      },
+      {
+        &quot;name&quot;: &quot;work_mem&quot;,
+        &quot;setting&quot;: &quot;32768&quot;
+      }
+    ]
+  }
+}</pre><details><summary>All raw results and excluded warm-ups</summary><pre>{
+  &quot;timestamp&quot;: &quot;2026-10-02T17:37:33.881Z&quot;,
+  &quot;repeats&quot;: 3,
+  &quot;environments&quot;: {
+    &quot;nodefs&quot;: {
+      &quot;runtime&quot;: {
+        &quot;name&quot;: &quot;node&quot;,
+        &quot;version&quot;: &quot;v24.21.0&quot;
+      },
+      &quot;platform&quot;: &quot;linux&quot;,
+      &quot;arch&quot;: &quot;x64&quot;,
+      &quot;cpu&quot;: &quot;AMD EPYC 9V74 80-Core Processor&quot;,
+      &quot;settings&quot;: [
+        {
+          &quot;name&quot;: &quot;fsync&quot;,
+          &quot;setting&quot;: &quot;off&quot;
+        },
+        {
+          &quot;name&quot;: &quot;shared_buffers&quot;,
+          &quot;setting&quot;: &quot;12800&quot;
+        },
+        {
+          &quot;name&quot;: &quot;work_mem&quot;,
+          &quot;setting&quot;: &quot;32768&quot;
+        }
+      ]
+    },
+    &quot;singlefile&quot;: {
+      &quot;runtime&quot;: {
+        &quot;name&quot;: &quot;node&quot;,
+        &quot;version&quot;: &quot;v24.21.0&quot;
+      },
+      &quot;platform&quot;: &quot;linux&quot;,
+      &quot;arch&quot;: &quot;x64&quot;,
+      &quot;cpu&quot;: &quot;AMD EPYC 9V74 80-Core Processor&quot;,
+      &quot;settings&quot;: [
+        {
+          &quot;name&quot;: &quot;fsync&quot;,
+          &quot;setting&quot;: &quot;off&quot;
+        },
+        {
+          &quot;name&quot;: &quot;shared_buffers&quot;,
+          &quot;setting&quot;: &quot;12544&quot;
+        },
+        {
+          &quot;name&quot;: &quot;work_mem&quot;,
+          &quot;setting&quot;: &quot;32768&quot;
+        }
+      ]
+    }
+  },
+  &quot;summary&quot;: [
+    {
+      &quot;phase&quot;: &quot;joinWithoutIndex&quot;,
+      &quot;nodefsMs&quot;: 99.5183290000059,
+      &quot;singlefileMs&quot;: 159.25584099999833,
+      &quot;ratio&quot;: 1.6002664293126232
+    },
+    {
+      &quot;phase&quot;: &quot;joinWithIndex&quot;,
+      &quot;nodefsMs&quot;: 0.5349149999965448,
+      &quot;singlefileMs&quot;: 0.5494170000019949,
+      &quot;ratio&quot;: 1.0271108493976497
+    }
+  ],
+  &quot;records&quot;: [
+    {
+      &quot;backend&quot;: &quot;nodefs&quot;,
+      &quot;payloadHash&quot;: &quot;a68aeb01113bdd88c2006dca5885a5c131d914fdd89d48a62a6573b6b43c16b7&quot;,
+      &quot;targetBytes&quot;: 5368709120,
+      &quot;rows&quot;: 960000,
+      &quot;relationBytes&quot;: 5375270912,
+      &quot;loadMs&quot;: 53011.851997000005,
+      &quot;indexMs&quot;: 696.0562470000004,
+      &quot;bytesBeforeIndex&quot;: 6472097885,
+      &quot;imageBeforeIndex&quot;: null,
+      &quot;closedBytes&quot;: 6478979110,
+      &quot;samples&quot;: [
+        {
+          &quot;phase&quot;: &quot;joinWithoutIndex&quot;,
+          &quot;elapsedMs&quot;: 103.78321300000243,
+          &quot;result&quot;: {
+            &quot;n&quot;: &quot;96&quot;,
+            &quot;total&quot;: &quot;3936&quot;
+          },
+          &quot;excludedWarmup&quot;: true
+        },
+        {
+          &quot;phase&quot;: &quot;joinWithoutIndex&quot;,
+          &quot;elapsedMs&quot;: 104.72841499999777,
+          &quot;result&quot;: {
+            &quot;n&quot;: &quot;96&quot;,
+            &quot;total&quot;: &quot;3936&quot;
+          },
+          &quot;excludedWarmup&quot;: false
+        },
+        {
+          &quot;phase&quot;: &quot;joinWithoutIndex&quot;,
+          &quot;elapsedMs&quot;: 99.0387069999997,
+          &quot;result&quot;: {
+            &quot;n&quot;: &quot;96&quot;,
+            &quot;total&quot;: &quot;3936&quot;
+          },
+          &quot;excludedWarmup&quot;: false
+        },
+        {
+          &quot;phase&quot;: &quot;joinWithoutIndex&quot;,
+          &quot;elapsedMs&quot;: 99.5183290000059,
+          &quot;result&quot;: {
+            &quot;n&quot;: &quot;96&quot;,
+            &quot;total&quot;: &quot;3936&quot;
+          },
+          &quot;excludedWarmup&quot;: false
+        },
+        {
+          &quot;phase&quot;: &quot;joinWithIndex&quot;,
+          &quot;elapsedMs&quot;: 1.4513630000001285,
+          &quot;result&quot;: {
+            &quot;n&quot;: &quot;96&quot;,
+            &quot;total&quot;: &quot;3936&quot;
+          },
+          &quot;excludedWarmup&quot;: true
+        },
+        {
+          &quot;phase&quot;: &quot;joinWithIndex&quot;,
+          &quot;elapsedMs&quot;: 0.6379989999986719,
+          &quot;result&quot;: {
+            &quot;n&quot;: &quot;96&quot;,
+            &quot;total&quot;: &quot;3936&quot;
+          },
+          &quot;excludedWarmup&quot;: false
+        },
+        {
+          &quot;phase&quot;: &quot;joinWithIndex&quot;,
+          &quot;elapsedMs&quot;: 0.5161259999949834,
+          &quot;result&quot;: {
+            &quot;n&quot;: &quot;96&quot;,
+            &quot;total&quot;: &quot;3936&quot;
+          },
+          &quot;excludedWarmup&quot;: false
+        },
+        {
+          &quot;phase&quot;: &quot;joinWithIndex&quot;,
+          &quot;elapsedMs&quot;: 0.5349149999965448,
+          &quot;result&quot;: {
+            &quot;n&quot;: &quot;96&quot;,
+            &quot;total&quot;: &quot;3936&quot;
+          },
+          &quot;excludedWarmup&quot;: false
+        }
+      ],
+      &quot;planWithout&quot;: [
+        {
+          &quot;QUERY PLAN&quot;: [
+            {
+              &quot;Plan&quot;: {
+                &quot;Node Type&quot;: &quot;Aggregate&quot;,
+                &quot;Strategy&quot;: &quot;Plain&quot;,
+                &quot;Partial Mode&quot;: &quot;Simple&quot;,
+                &quot;Parallel Aware&quot;: false,
+                &quot;Async Capable&quot;: false,
+                &quot;Startup Cost&quot;: 20009.74,
+                &quot;Total Cost&quot;: 20009.76,
+                &quot;Plan Rows&quot;: 1,
+                &quot;Plan Width&quot;: 64,
+                &quot;Disabled&quot;: false,
+                &quot;Plans&quot;: [
+                  {
+                    &quot;Node Type&quot;: &quot;Nested Loop&quot;,
+                    &quot;Parent Relationship&quot;: &quot;Outer&quot;,
+                    &quot;Parallel Aware&quot;: false,
+                    &quot;Async Capable&quot;: false,
+                    &quot;Join Type&quot;: &quot;Inner&quot;,
+                    &quot;Startup Cost&quot;: 0.29,
+                    &quot;Total Cost&quot;: 20009.26,
+                    &quot;Plan Rows&quot;: 96,
+                    &quot;Plan Width&quot;: 4,
+                    &quot;Disabled&quot;: false,
+                    &quot;Inner Unique&quot;: false,
+                    &quot;Plans&quot;: [
+                      {
+                        &quot;Node Type&quot;: &quot;Index Only Scan&quot;,
+                        &quot;Parent Relationship&quot;: &quot;Outer&quot;,
+                        &quot;Parallel Aware&quot;: false,
+                        &quot;Async Capable&quot;: false,
+                        &quot;Scan Direction&quot;: &quot;Forward&quot;,
+                        &quot;Index Name&quot;: &quot;customers_pkey&quot;,
+                        &quot;Relation Name&quot;: &quot;customers&quot;,
+                        &quot;Alias&quot;: &quot;c&quot;,
+                        &quot;Startup Cost&quot;: 0.29,
+                        &quot;Total Cost&quot;: 8.3,
+                        &quot;Plan Rows&quot;: 1,
+                        &quot;Plan Width&quot;: 8,
+                        &quot;Disabled&quot;: false,
+                        &quot;Index Cond&quot;: &quot;(id = &#39;42&#39;::bigint)&quot;
+                      },
+                      {
+                        &quot;Node Type&quot;: &quot;Seq Scan&quot;,
+                        &quot;Parent Relationship&quot;: &quot;Inner&quot;,
+                        &quot;Parallel Aware&quot;: false,
+                        &quot;Async Capable&quot;: false,
+                        &quot;Relation Name&quot;: &quot;events&quot;,
+                        &quot;Alias&quot;: &quot;e&quot;,
+                        &quot;Startup Cost&quot;: 0,
+                        &quot;Total Cost&quot;: 20000,
+                        &quot;Plan Rows&quot;: 96,
+                        &quot;Plan Width&quot;: 12,
+                        &quot;Disabled&quot;: false,
+                        &quot;Filter&quot;: &quot;(customer_id = &#39;42&#39;::bigint)&quot;
+                      }
+                    ]
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ],
+      &quot;planWith&quot;: [
+        {
+          &quot;QUERY PLAN&quot;: [
+            {
+              &quot;Plan&quot;: {
+                &quot;Node Type&quot;: &quot;Aggregate&quot;,
+                &quot;Strategy&quot;: &quot;Plain&quot;,
+                &quot;Partial Mode&quot;: &quot;Simple&quot;,
+                &quot;Parallel Aware&quot;: false,
+                &quot;Async Capable&quot;: false,
+                &quot;Startup Cost&quot;: 368.56,
+                &quot;Total Cost&quot;: 368.58,
+                &quot;Plan Rows&quot;: 1,
+                &quot;Plan Width&quot;: 64,
+                &quot;Disabled&quot;: false,
+                &quot;Plans&quot;: [
+                  {
+                    &quot;Node Type&quot;: &quot;Nested Loop&quot;,
+                    &quot;Parent Relationship&quot;: &quot;Outer&quot;,
+                    &quot;Parallel Aware&quot;: false,
+                    &quot;Async Capable&quot;: false,
+                    &quot;Join Type&quot;: &quot;Inner&quot;,
+                    &quot;Startup Cost&quot;: 5.45,
+                    &quot;Total Cost&quot;: 368.08,
+                    &quot;Plan Rows&quot;: 96,
+                    &quot;Plan Width&quot;: 4,
+                    &quot;Disabled&quot;: false,
+                    &quot;Inner Unique&quot;: false,
+                    &quot;Plans&quot;: [
+                      {
+                        &quot;Node Type&quot;: &quot;Index Only Scan&quot;,
+                        &quot;Parent Relationship&quot;: &quot;Outer&quot;,
+                        &quot;Parallel Aware&quot;: false,
+                        &quot;Async Capable&quot;: false,
+                        &quot;Scan Direction&quot;: &quot;Forward&quot;,
+                        &quot;Index Name&quot;: &quot;customers_pkey&quot;,
+                        &quot;Relation Name&quot;: &quot;customers&quot;,
+                        &quot;Alias&quot;: &quot;c&quot;,
+                        &quot;Startup Cost&quot;: 0.29,
+                        &quot;Total Cost&quot;: 8.3,
+                        &quot;Plan Rows&quot;: 1,
+                        &quot;Plan Width&quot;: 8,
+                        &quot;Disabled&quot;: false,
+                        &quot;Index Cond&quot;: &quot;(id = &#39;42&#39;::bigint)&quot;
+                      },
+                      {
+                        &quot;Node Type&quot;: &quot;Bitmap Heap Scan&quot;,
+                        &quot;Parent Relationship&quot;: &quot;Inner&quot;,
+                        &quot;Parallel Aware&quot;: false,
+                        &quot;Async Capable&quot;: false,
+                        &quot;Relation Name&quot;: &quot;events&quot;,
+                        &quot;Alias&quot;: &quot;e&quot;,
+                        &quot;Startup Cost&quot;: 5.17,
+                        &quot;Total Cost&quot;: 358.82,
+                        &quot;Plan Rows&quot;: 96,
+                        &quot;Plan Width&quot;: 12,
+                        &quot;Disabled&quot;: false,
+                        &quot;Recheck Cond&quot;: &quot;(customer_id = &#39;42&#39;::bigint)&quot;,
+                        &quot;Plans&quot;: [
+                          {
+                            &quot;Node Type&quot;: &quot;Bitmap Index Scan&quot;,
+                            &quot;Parent Relationship&quot;: &quot;Outer&quot;,
+                            &quot;Parallel Aware&quot;: false,
+                            &quot;Async Capable&quot;: false,
+                            &quot;Index Name&quot;: &quot;events_customer_id_idx&quot;,
+                            &quot;Startup Cost&quot;: 0,
+                            &quot;Total Cost&quot;: 5.14,
+                            &quot;Plan Rows&quot;: 96,
+                            &quot;Plan Width&quot;: 0,
+                            &quot;Disabled&quot;: false,
+                            &quot;Index Cond&quot;: &quot;(customer_id = &#39;42&#39;::bigint)&quot;
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ],
+      &quot;peakObservedLoadingStorageBytes&quot;: 9844318301,
+      &quot;peakObservedLoadingSqliteWalBytes&quot;: 0
+    },
+    {
+      &quot;backend&quot;: &quot;singlefile&quot;,
+      &quot;payloadHash&quot;: &quot;a68aeb01113bdd88c2006dca5885a5c131d914fdd89d48a62a6573b6b43c16b7&quot;,
+      &quot;targetBytes&quot;: 5368709120,
+      &quot;rows&quot;: 960000,
+      &quot;relationBytes&quot;: 5375270912,
+      &quot;loadMs&quot;: 55879.145096,
+      &quot;indexMs&quot;: 838.513282999993,
+      &quot;bytesBeforeIndex&quot;: 11380378448,
+      &quot;imageBeforeIndex&quot;: 10969530368,
+      &quot;closedBytes&quot;: 10969530368,
+      &quot;samples&quot;: [
+        {
+          &quot;phase&quot;: &quot;joinWithoutIndex&quot;,
+          &quot;elapsedMs&quot;: 173.66501300000527,
+          &quot;result&quot;: {
+            &quot;n&quot;: &quot;96&quot;,
+            &quot;total&quot;: &quot;3936&quot;
+          },
+          &quot;excludedWarmup&quot;: true
+        },
+        {
+          &quot;phase&quot;: &quot;joinWithoutIndex&quot;,
+          &quot;elapsedMs&quot;: 159.25584099999833,
+          &quot;result&quot;: {
+            &quot;n&quot;: &quot;96&quot;,
+            &quot;total&quot;: &quot;3936&quot;
+          },
+          &quot;excludedWarmup&quot;: false
+        },
+        {
+          &quot;phase&quot;: &quot;joinWithoutIndex&quot;,
+          &quot;elapsedMs&quot;: 148.78002500000002,
+          &quot;result&quot;: {
+            &quot;n&quot;: &quot;96&quot;,
+            &quot;total&quot;: &quot;3936&quot;
+          },
+          &quot;excludedWarmup&quot;: false
+        },
+        {
+          &quot;phase&quot;: &quot;joinWithoutIndex&quot;,
+          &quot;elapsedMs&quot;: 162.14730899999995,
+          &quot;result&quot;: {
+            &quot;n&quot;: &quot;96&quot;,
+            &quot;total&quot;: &quot;3936&quot;
+          },
+          &quot;excludedWarmup&quot;: false
+        },
+        {
+          &quot;phase&quot;: &quot;joinWithIndex&quot;,
+          &quot;elapsedMs&quot;: 2.6265110000022105,
+          &quot;result&quot;: {
+            &quot;n&quot;: &quot;96&quot;,
+            &quot;total&quot;: &quot;3936&quot;
+          },
+          &quot;excludedWarmup&quot;: true
+        },
+        {
+          &quot;phase&quot;: &quot;joinWithIndex&quot;,
+          &quot;elapsedMs&quot;: 0.6985710000008112,
+          &quot;result&quot;: {
+            &quot;n&quot;: &quot;96&quot;,
+            &quot;total&quot;: &quot;3936&quot;
+          },
+          &quot;excludedWarmup&quot;: false
+        },
+        {
+          &quot;phase&quot;: &quot;joinWithIndex&quot;,
+          &quot;elapsedMs&quot;: 0.5494170000019949,
+          &quot;result&quot;: {
+            &quot;n&quot;: &quot;96&quot;,
+            &quot;total&quot;: &quot;3936&quot;
+          },
+          &quot;excludedWarmup&quot;: false
+        },
+        {
+          &quot;phase&quot;: &quot;joinWithIndex&quot;,
+          &quot;elapsedMs&quot;: 0.5118499999953201,
+          &quot;result&quot;: {
+            &quot;n&quot;: &quot;96&quot;,
+            &quot;total&quot;: &quot;3936&quot;
+          },
+          &quot;excludedWarmup&quot;: false
+        }
+      ],
+      &quot;planWithout&quot;: [
+        {
+          &quot;QUERY PLAN&quot;: [
+            {
+              &quot;Plan&quot;: {
+                &quot;Node Type&quot;: &quot;Aggregate&quot;,
+                &quot;Strategy&quot;: &quot;Plain&quot;,
+                &quot;Partial Mode&quot;: &quot;Simple&quot;,
+                &quot;Parallel Aware&quot;: false,
+                &quot;Async Capable&quot;: false,
+                &quot;Startup Cost&quot;: 20009.74,
+                &quot;Total Cost&quot;: 20009.76,
+                &quot;Plan Rows&quot;: 1,
+                &quot;Plan Width&quot;: 64,
+                &quot;Disabled&quot;: false,
+                &quot;Plans&quot;: [
+                  {
+                    &quot;Node Type&quot;: &quot;Nested Loop&quot;,
+                    &quot;Parent Relationship&quot;: &quot;Outer&quot;,
+                    &quot;Parallel Aware&quot;: false,
+                    &quot;Async Capable&quot;: false,
+                    &quot;Join Type&quot;: &quot;Inner&quot;,
+                    &quot;Startup Cost&quot;: 0.29,
+                    &quot;Total Cost&quot;: 20009.26,
+                    &quot;Plan Rows&quot;: 96,
+                    &quot;Plan Width&quot;: 4,
+                    &quot;Disabled&quot;: false,
+                    &quot;Inner Unique&quot;: false,
+                    &quot;Plans&quot;: [
+                      {
+                        &quot;Node Type&quot;: &quot;Index Only Scan&quot;,
+                        &quot;Parent Relationship&quot;: &quot;Outer&quot;,
+                        &quot;Parallel Aware&quot;: false,
+                        &quot;Async Capable&quot;: false,
+                        &quot;Scan Direction&quot;: &quot;Forward&quot;,
+                        &quot;Index Name&quot;: &quot;customers_pkey&quot;,
+                        &quot;Relation Name&quot;: &quot;customers&quot;,
+                        &quot;Alias&quot;: &quot;c&quot;,
+                        &quot;Startup Cost&quot;: 0.29,
+                        &quot;Total Cost&quot;: 8.3,
+                        &quot;Plan Rows&quot;: 1,
+                        &quot;Plan Width&quot;: 8,
+                        &quot;Disabled&quot;: false,
+                        &quot;Index Cond&quot;: &quot;(id = &#39;42&#39;::bigint)&quot;
+                      },
+                      {
+                        &quot;Node Type&quot;: &quot;Seq Scan&quot;,
+                        &quot;Parent Relationship&quot;: &quot;Inner&quot;,
+                        &quot;Parallel Aware&quot;: false,
+                        &quot;Async Capable&quot;: false,
+                        &quot;Relation Name&quot;: &quot;events&quot;,
+                        &quot;Alias&quot;: &quot;e&quot;,
+                        &quot;Startup Cost&quot;: 0,
+                        &quot;Total Cost&quot;: 20000,
+                        &quot;Plan Rows&quot;: 96,
+                        &quot;Plan Width&quot;: 12,
+                        &quot;Disabled&quot;: false,
+                        &quot;Filter&quot;: &quot;(customer_id = &#39;42&#39;::bigint)&quot;
+                      }
+                    ]
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ],
+      &quot;planWith&quot;: [
+        {
+          &quot;QUERY PLAN&quot;: [
+            {
+              &quot;Plan&quot;: {
+                &quot;Node Type&quot;: &quot;Aggregate&quot;,
+                &quot;Strategy&quot;: &quot;Plain&quot;,
+                &quot;Partial Mode&quot;: &quot;Simple&quot;,
+                &quot;Parallel Aware&quot;: false,
+                &quot;Async Capable&quot;: false,
+                &quot;Startup Cost&quot;: 368.56,
+                &quot;Total Cost&quot;: 368.58,
+                &quot;Plan Rows&quot;: 1,
+                &quot;Plan Width&quot;: 64,
+                &quot;Disabled&quot;: false,
+                &quot;Plans&quot;: [
+                  {
+                    &quot;Node Type&quot;: &quot;Nested Loop&quot;,
+                    &quot;Parent Relationship&quot;: &quot;Outer&quot;,
+                    &quot;Parallel Aware&quot;: false,
+                    &quot;Async Capable&quot;: false,
+                    &quot;Join Type&quot;: &quot;Inner&quot;,
+                    &quot;Startup Cost&quot;: 5.45,
+                    &quot;Total Cost&quot;: 368.08,
+                    &quot;Plan Rows&quot;: 96,
+                    &quot;Plan Width&quot;: 4,
+                    &quot;Disabled&quot;: false,
+                    &quot;Inner Unique&quot;: false,
+                    &quot;Plans&quot;: [
+                      {
+                        &quot;Node Type&quot;: &quot;Index Only Scan&quot;,
+                        &quot;Parent Relationship&quot;: &quot;Outer&quot;,
+                        &quot;Parallel Aware&quot;: false,
+                        &quot;Async Capable&quot;: false,
+                        &quot;Scan Direction&quot;: &quot;Forward&quot;,
+                        &quot;Index Name&quot;: &quot;customers_pkey&quot;,
+                        &quot;Relation Name&quot;: &quot;customers&quot;,
+                        &quot;Alias&quot;: &quot;c&quot;,
+                        &quot;Startup Cost&quot;: 0.29,
+                        &quot;Total Cost&quot;: 8.3,
+                        &quot;Plan Rows&quot;: 1,
+                        &quot;Plan Width&quot;: 8,
+                        &quot;Disabled&quot;: false,
+                        &quot;Index Cond&quot;: &quot;(id = &#39;42&#39;::bigint)&quot;
+                      },
+                      {
+                        &quot;Node Type&quot;: &quot;Bitmap Heap Scan&quot;,
+                        &quot;Parent Relationship&quot;: &quot;Inner&quot;,
+                        &quot;Parallel Aware&quot;: false,
+                        &quot;Async Capable&quot;: false,
+                        &quot;Relation Name&quot;: &quot;events&quot;,
+                        &quot;Alias&quot;: &quot;e&quot;,
+                        &quot;Startup Cost&quot;: 5.17,
+                        &quot;Total Cost&quot;: 358.82,
+                        &quot;Plan Rows&quot;: 96,
+                        &quot;Plan Width&quot;: 12,
+                        &quot;Disabled&quot;: false,
+                        &quot;Recheck Cond&quot;: &quot;(customer_id = &#39;42&#39;::bigint)&quot;,
+                        &quot;Plans&quot;: [
+                          {
+                            &quot;Node Type&quot;: &quot;Bitmap Index Scan&quot;,
+                            &quot;Parent Relationship&quot;: &quot;Outer&quot;,
+                            &quot;Parallel Aware&quot;: false,
+                            &quot;Async Capable&quot;: false,
+                            &quot;Index Name&quot;: &quot;events_customer_id_idx&quot;,
+                            &quot;Startup Cost&quot;: 0,
+                            &quot;Total Cost&quot;: 5.14,
+                            &quot;Plan Rows&quot;: 96,
+                            &quot;Plan Width&quot;: 0,
+                            &quot;Disabled&quot;: false,
+                            &quot;Index Cond&quot;: &quot;(customer_id = &#39;42&#39;::bigint)&quot;
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ],
+      &quot;peakObservedLoadingStorageBytes&quot;: 11085342776,
+      &quot;peakObservedLoadingSqliteWalBytes&quot;: 115689528
+    }
+  ],
+  &quot;notes&quot;: [
+    &quot;Two application tables. PostgreSQL total relation sizes (including TOAST) reach at least 5 GiB before index creation. Physical backend sizes separately measured; adapter file need not equal logical PostgreSQL size. Peak loading storage/WAL sizes are observed only at loading batch boundaries and may miss intra-batch or later index/checkpoint peaks.&quot;,
+    &quot;No event join-key index in first phase; indexed customers and indexed events in second. Explicit plans saved. Same selective customer join avoids a pathological Cartesian join.&quot;,
+    &quot;One excluded warm-up per join phase. OS cache not cleared. Backends run sequentially once, so environmental/order effects remain; not a cross-machine performance guarantee.&quot;,
+    &quot;Payload is one cryptographically random base64 value reused across rows, resisting per-value PostgreSQL compression; storage layers do not deduplicate it. Joins read keys/amounts, not the complete payload: this checks large database operation, not a full 5 GiB payload scan.&quot;,
+    &quot;100 MiB configured page-cache budget, not a total RAM cap. NodeFS fsync=off versus SQLite synchronous=FULL; hardware durability differs.&quot;
+  ]
+}</pre></details></html>

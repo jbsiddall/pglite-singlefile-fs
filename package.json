@@ -1,0 +1,60 @@
+{
+  "name": "pglite-singlefile-fs",
+  "version": "0.1.0",
+  "description": "Single-file virtual filesystem for PGlite. Portable embedded PostgreSQL on Node.js, Bun and Deno.",
+  "type": "module",
+  "main": "./src/index.mjs",
+  "types": "./src/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./src/index.d.ts",
+      "import": "./src/index.mjs"
+    }
+  },
+  "files": [
+    "src",
+    "LICENSE",
+    "README.md"
+  ],
+  "sideEffects": false,
+  "engines": {
+    "node": ">=22.13.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/jbsiddall/pglite-singlefile-fs.git"
+  },
+  "homepage": "https://github.com/jbsiddall/pglite-singlefile-fs#readme",
+  "bugs": "https://github.com/jbsiddall/pglite-singlefile-fs/issues",
+  "license": "Apache-2.0",
+  "keywords": [
+    "pglite",
+    "postgresql",
+    "single-file",
+    "virtual-filesystem",
+    "nodejs",
+    "bun",
+    "deno",
+    "embedded-database"
+  ],
+  "scripts": {
+    "build": "tsc --noEmit",
+    "test": "vitest run",
+    "test:ci": "vitest run",
+    "bench": "vitest bench --run",
+    "bench:ci": "vitest bench --run && node scripts/benchmark-run.mjs && node scripts/benchmark-report.mjs",
+    "bench:sample": "node scripts/benchmark-run.mjs && node scripts/benchmark-report.mjs",
+    "bench:big": "node scripts/big-benchmark.mjs && node scripts/benchmark-report.mjs reports/benchmark-large-results.json reports/benchmark-large-report.html"
+  },
+  "peerDependencies": {
+    "@electric-sql/pglite": "^0.5.8"
+  },
+  "devDependencies": {
+    "@electric-sql/pglite": "0.5.8",
+    "@types/node": "^24.0.0",
+    "@vitest/ui": "5.0.3",
+    "fast-check": "4.10.2",
+    "typescript": "5.9.3",
+    "vitest": "5.0.3"
+  }
+}

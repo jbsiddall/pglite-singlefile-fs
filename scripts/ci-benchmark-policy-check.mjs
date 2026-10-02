@@ -6,6 +6,11 @@ const crash = 'Bun v1.2.23\npanic(main thread): Segmentation fault at address 0x
 const wasm = "RuntimeError: access to a null reference (evaluating 'getWasmTableEntry(e)(t, r, a)')\nat invoke_viii (pglite/dist/index.js)";
 assert.equal(classifyBenchmark({ ...base, output: crash }), 'known_historical_engine_failure');
 assert.equal(classifyBenchmark({ ...base, output: wasm }), 'known_historical_engine_failure');
+const bounds = "Error: [bun/singlefile/initialize/setup] RuntimeError: Out of bounds memory access (evaluating 't(r, a)')\nat callMain (node_modules/@electric-sql/pglite/dist/index.js)";
+assert.equal(classifyBenchmark({ ...base, output: bounds }), 'known_historical_engine_failure');
+assert.equal(classifyBenchmark({ ...base, output: bounds + '\nAssertionError: checksum mismatch' }), 'fatal_failure');
+assert.equal(classifyBenchmark({ ...base, output: 'RuntimeError: Out of bounds memory access\nat pglite/dist/index.js' }), 'fatal_failure');
+assert.equal(classifyBenchmark({ ...base, output: "RuntimeError: Out of bounds memory access (evaluating 't(r, a)')\nat other-library.js" }), 'fatal_failure');
 for (const output of ['AssertionError: wrong bytes', 'checksum mismatch', crash + '\nAssertionError: wrong rows', 'TypeError: bad option', 'RuntimeError: unrelated WASM error', 'Error: SQL failed']) {
   assert.equal(classifyBenchmark({ ...base, output }), 'fatal_failure');
 }

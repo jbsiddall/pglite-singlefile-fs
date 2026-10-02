@@ -80,7 +80,7 @@ for (const report of reports) {
     if (classification !== check.classification || classification === 'fatal_failure') throw new Error(`Mandatory benchmark failure: ${report.name}/${phase}`);
     if ((classification === 'success') !== (check.outcome === 'success')) throw new Error('Benchmark outcome mismatch');
     if (classification === 'known_historical_engine_failure' && !historical) throw new Error('Unexpected engine exception');
-    outcomes.push(`${phase}: ${check.outcome}${classification === 'known_historical_engine_failure' ? ' (known upstream engine failure; advisory)' : ''}`);
+    outcomes.push(`${phase}: ${check.outcome}${classification === 'known_historical_engine_failure' ? ' (observed historical WASM/runtime failure; advisory)' : ''}`);
   }
   if (historical) historicalOutcomes.push(`${report.name}: ${outcomes.join('; ')}`);
 }
@@ -107,7 +107,7 @@ if (!existing) {
   await api('/git/refs', { method: 'POST', body: JSON.stringify({ ref: `refs/tags/${version}`, sha: annotated.sha }) });
 }
 const runUrl = `${process.env.GITHUB_SERVER_URL || 'https://github.com'}/${repository}/actions/runs/${process.env.GITHUB_RUN_ID}`;
-const notes = `Mandatory correctness tests and required benchmark checks passed for commit \`${sha}\`.\n\n[Exact CI run](${runUrl}). Attached ZIPs contain test HTML, benchmark outcome manifests, command logs, raw/partial benchmark results, available benchmark HTML and environment metadata. Download and open HTML locally.\n\nHistorical Bun 1.2.23 engine failures are advisory only; assertions and unrelated failures remain fatal. Actual historical-lane outcomes:\n${historicalOutcomes.map(outcome => "- " + outcome).join("\n") || "- No historical benchmark lane."}\n\nBenchmarks are observations on hosted runners; timings are not guarantees or release pass/fail thresholds.\n\n${commits.map(c => '- ' + c.split('\n')[0].replace(/[<>]/g, '')).join('\n')}`;
+const notes = `Mandatory correctness tests and required benchmark checks passed for commit \`${sha}\`.\n\n[Exact CI run](${runUrl}). Attached ZIPs contain test HTML, benchmark outcome manifests, command logs, raw/partial benchmark results, available benchmark HTML and environment metadata. Download and open HTML locally.\n\nOnly observed historical Bun 1.2.23 runtime-crash signatures are advisory; their exact cause is not independently established; assertions and unrelated failures remain fatal. Actual historical-lane outcomes:\n${historicalOutcomes.map(outcome => "- " + outcome).join("\n") || "- No historical benchmark lane."}\n\nBenchmarks are observations on hosted runners; timings are not guarantees or release pass/fail thresholds.\n\n${commits.map(c => '- ' + c.split('\n')[0].replace(/[<>]/g, '')).join('\n')}`;
 let release = await api(`/releases/tags/${version}`, {}, true);
 if (!release) release = await api('/releases', { method: 'POST', body: JSON.stringify({
   tag_name: version, target_commitish: sha, name: version, body: notes,

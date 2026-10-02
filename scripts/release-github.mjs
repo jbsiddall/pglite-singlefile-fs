@@ -1,6 +1,7 @@
 import { execFileSync } from 'node:child_process';
 import { existsSync, readFileSync, readdirSync, mkdirSync } from 'node:fs';
 import { resolve, join } from 'node:path';
+import { classifyBenchmark } from './ci-benchmark-policy.mjs';
 
 // GitHub releases only: no package publication, credentials or PR code execution.
 const repository = process.env.GITHUB_REPOSITORY;
@@ -55,13 +56,36 @@ const reportRoot = resolve('release-reports');
 const reports = readdirSync(reportRoot, { withFileTypes: true })
   .filter(e => e.isDirectory() && /^reports-(node|deno|bun)-[\d.]+-(ubuntu-24\.04(?:-arm)?|macos-14)$/.test(e.name));
 if (!reports.length) throw new Error('No CI reports to attach');
+if (process.env.EXPECTED_REPORT_COUNT && reports.length !== Number(process.env.EXPECTED_REPORT_COUNT)) throw new Error('Incomplete runtime/platform report set');
+const historicalOutcomes = [];
 for (const report of reports) {
   const environmentFile = join(reportRoot, report.name, 'environment.json');
-  if (!existsSync(environmentFile)) throw new Error(`Missing environment for ${report.name}`);
-  if (JSON.parse(readFileSync(environmentFile, 'utf8')).commit !== sha) throw new Error('Report commit mismatch');
+  const manifestFile = join(reportRoot, report.name, 'checks.json');
+  if (!existsSync(environmentFile) || !existsSync(manifestFile)) throw new Error(`Missing environment/checks for ${report.name}`);
+  const environment = JSON.parse(readFileSync(environmentFile, 'utf8'));
+  const checks = JSON.parse(readFileSync(manifestFile, 'utf8'));
+  if (environment.commit !== sha || checks.commit !== sha) throw new Error('Report commit mismatch');
+  if (checks.runtime !== environment.runtime || !environment.version.split(/\s+/).some(part => part.replace(/^v/, '') === checks.version)) throw new Error('Report runtime/version mismatch');
+  if (checks.tests.outcome !== 'success' || checks.tests.failed !== 0 || !(checks.tests.total > 0) || checks.tests.passed !== checks.tests.total) throw new Error(`Correctness tests did not pass: ${report.name}`);
+  const historical = environment.runtime === 'bun' && environment.version === '1.2.23'
+    && checks.runtime === 'bun' && checks.version === '1.2.23';
+  if (Boolean(checks.advisory.enabled) !== historical) throw new Error('Advisory lane identity mismatch');
+  const outcomes = [];
+  for (const phase of ['vitest', 'sampled']) {
+    const check = checks.benchmarks[phase];
+    if (!check || !['success', 'failure'].includes(check.outcome)) throw new Error(`Benchmark not attempted: ${report.name}/${phase}`);
+    const log = readFileSync(join(reportRoot, report.name, `benchmark-${phase}.log`), 'utf8');
+    const classification = classifyBenchmark({ runtime: checks.runtime, version: checks.version,
+      status: check.exitCode, signal: check.signal, error: check.error, output: log });
+    if (classification !== check.classification || classification === 'fatal_failure') throw new Error(`Mandatory benchmark failure: ${report.name}/${phase}`);
+    if ((classification === 'success') !== (check.outcome === 'success')) throw new Error('Benchmark outcome mismatch');
+    if (classification === 'known_historical_engine_failure' && !historical) throw new Error('Unexpected engine exception');
+    outcomes.push(`${phase}: ${check.outcome}${classification === 'known_historical_engine_failure' ? ' (known upstream engine failure; advisory)' : ''}`);
+  }
+  if (historical) historicalOutcomes.push(`${report.name}: ${outcomes.join('; ')}`);
 }
 if (process.env.RELEASE_DRY_RUN === '1') {
-  console.log(JSON.stringify({ version, bump, commit: sha, reportCount: reports.length }));
+  console.log(JSON.stringify({ version, bump, commit: sha, reportCount: reports.length, historicalOutcomes }));
   process.exit(0);
 }
 const assetsDir = resolve('release-assets');
@@ -83,7 +107,7 @@ if (!existing) {
   await api('/git/refs', { method: 'POST', body: JSON.stringify({ ref: `refs/tags/${version}`, sha: annotated.sha }) });
 }
 const runUrl = `${process.env.GITHUB_SERVER_URL || 'https://github.com'}/${repository}/actions/runs/${process.env.GITHUB_RUN_ID}`;
-const notes = `All runtime/platform test and benchmark jobs passed for commit \`${sha}\`.\n\n[Exact CI run](${runUrl}). Attached ZIPs contain test HTML, raw benchmark results, benchmark HTML and environment metadata. Download and open HTML locally.\n\nBenchmarks are observations on hosted runners; timings are not guarantees or release pass/fail thresholds.\n\n${commits.map(c => '- ' + c.split('\n')[0].replace(/[<>]/g, '')).join('\n')}`;
+const notes = `Mandatory correctness tests and required benchmark checks passed for commit \`${sha}\`.\n\n[Exact CI run](${runUrl}). Attached ZIPs contain test HTML, benchmark outcome manifests, command logs, raw/partial benchmark results, available benchmark HTML and environment metadata. Download and open HTML locally.\n\nHistorical Bun 1.2.23 engine failures are advisory only; assertions and unrelated failures remain fatal. Actual historical-lane outcomes:\n${historicalOutcomes.map(outcome => "- " + outcome).join("\n") || "- No historical benchmark lane."}\n\nBenchmarks are observations on hosted runners; timings are not guarantees or release pass/fail thresholds.\n\n${commits.map(c => '- ' + c.split('\n')[0].replace(/[<>]/g, '')).join('\n')}`;
 let release = await api(`/releases/tags/${version}`, {}, true);
 if (!release) release = await api('/releases', { method: 'POST', body: JSON.stringify({
   tag_name: version, target_commitish: sha, name: version, body: notes,

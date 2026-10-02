@@ -34,7 +34,7 @@ jobs:
               .filter(a => !a.expired && /^reports-(node|deno|bun)-[0-9]+\.[0-9]+\.[0-9]+-(ubuntu-24\.04(?:-arm)?|macos-14)$/.test(a.name))
               .map(a => `- [${a.name}](${run.html_url}/artifacts/${a.id})`);
             const marker = '<!-- pglite-ci-reports -->';
-            const body = `${marker}\nTests and benchmarks for commit \`${run.head_sha.slice(0, 12)}\`: **${run.conclusion}**.\n\n[CI run](${run.html_url})\n\n${links.join('\n') || 'No report artifacts were uploaded. See the CI logs.'}\n\nArtifacts contain test HTML, benchmark reports and raw results. Download and open the HTML locally; GitHub does not serve artifact HTML as a live page.`;
+            const body = `${marker}\nCI workflow conclusion for commit \`${run.head_sha.slice(0, 12)}\`: **${run.conclusion}**.\n\n[CI run](${run.html_url})\n\nCorrectness tests remain mandatory in every lane. Only reproduced upstream Bun 1.2.23 engine crashes are advisory; other benchmark failures remain fatal. Read checks.json or checks.html in each artifact for actual command outcomes, including failures.\n\n${links.join('\n') || 'No report artifacts were uploaded. See the CI logs.'}\n\nArtifacts contain test HTML, benchmark reports and raw results. Download and open the HTML locally; GitHub does not serve artifact HTML as a live page.`;
             for (const prRef of prs) {
               const pr = (await github.rest.pulls.get({...context.repo, pull_number: prRef.number})).data;
               if (pr.state !== 'open' || pr.head.sha !== run.head_sha) continue;

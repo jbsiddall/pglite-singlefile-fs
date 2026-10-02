@@ -23,7 +23,11 @@ try {
   ]) {
     git('commit', '--allow-empty', '-m', message);
     const sha = git('rev-parse', 'HEAD');
-    writeFileSync(join(report, 'environment.json'), JSON.stringify({ commit: sha }));
+    writeFileSync(join(report, 'environment.json'), JSON.stringify({ commit: sha, runtime: 'node', version: 'v24.21.0' }));
+    writeFileSync(join(report, 'checks.json'), JSON.stringify({ commit: sha, runtime: 'node', version: '24.21.0',
+      tests: { outcome: 'success', total: 1, passed: 1, failed: 0 }, advisory: { enabled: false },
+      benchmarks: Object.fromEntries(['vitest', 'sampled'].map(phase => [phase, { outcome: 'success', exitCode: 0, signal: null, error: null, classification: 'success' }])) }));
+    for (const phase of ['vitest', 'sampled']) writeFileSync(join(report, `benchmark-${phase}.log`), '');
     const output = execFileSync(process.execPath, [releaseScript], {
       cwd: dir, encoding: 'utf8', env: { ...process.env,
         GITHUB_REPOSITORY: 'test/example', GITHUB_SHA: sha,

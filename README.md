@@ -139,7 +139,7 @@ npm run build
 npm test
 ```
 
-CI runs tests and records benchmarks on pull-request updates and pushes to the default branch. It uploads an HTML test report and benchmark results, with links from pull requests. After the default-branch matrix passes, the release workflow creates a semver tag and attaches reports from that exact run. Large benchmarks have a separate manual workflow because they are unsuitable for every PR update.
+CI runs tests and records benchmarks on pull-request updates and pushes to the default branch. It uploads an HTML test report and benchmark results, with links from pull requests. All correctness tests gate every lane. Benchmarks also gate CI, with one narrow exception: reproduced historical Bun 1.2.23 engine-crash signatures (Bun segmentation-fault panics or the known WASM `getWasmTableEntry` null-reference failure) are advisory. Assertion or checksum failures, timeouts, and unknown failures remain fatal, including on old Bun. Both benchmark runs are still attempted, failures and partial reports are retained, and release reports disclose any classified advisory crash. After the required default-branch checks pass, the release workflow creates a semver tag and attaches reports from that exact run. A green required-check result does not mean every advisory benchmark succeeded. Large benchmarks have a separate manual workflow because they are unsuitable for every PR update.
 
 Vitest coordinates the suite on Node.js. The database workers execute under the runtime being tested, so a Bun or Deno matrix entry exercises that runtime's database and filesystem behavior rather than only changing a label.
 
@@ -147,17 +147,19 @@ Runtime coverage selects the latest published non-prerelease release and represe
 
 Initial local validation passed all 11 tests on Linux x86-64 using Node.js 24.19.0, Bun 1.4.2, and Deno 2.9.6. This does not establish the full hosted runtime/platform matrix; ARM and macOS results remain separate checks.
 
-In the [initial hosted run](https://github.com/jbsiddall/pglite-singlefile-fs/actions/runs/37041731782), all 15 runtime/platform lanes passed the 11 tests and six Vitest benchmarks. Fourteen lanes completed the separate sampled benchmark; the Bun 1.2.23 Linux lane failed during a later native-filesystem benchmark iteration with a WASM error. That failure is retained in the raw report and must be resolved before calling the entire workflow green.
+In the [initial hosted run](https://github.com/jbsiddall/pglite-singlefile-fs/actions/runs/37041731782), all 15 runtime/platform lanes passed the 11 tests and six Vitest benchmarks. Fourteen lanes completed the separate sampled benchmark; the Bun 1.2.23 Linux lane failed during a later native-filesystem benchmark iteration with a WASM error. In the [flagged hosted follow-up](https://github.com/jbsiddall/pglite-singlefile-fs/actions/runs/37043190555), all 15 correctness-test lanes again passed, but Bun 1.2.23 crashed during a Vitest benchmark. Both failed runs remain available; neither establishes complete benchmark success.
 
-### Older Bun compatibility
+### Older Bun benchmark instability
 
-**Bun 1.2.23 needs a launch workaround for the tested PGlite workloads:**
+**Prefer a current Bun release.** Historical Bun 1.2.23 has unstable PGlite benchmark behavior, including failures with PGlite's native filesystem and no adapter imports. Its correctness tests still gate CI. Only the narrowly classified reproduced engine crashes are advisory and visible in reports; failed benchmark verification or any unrelated failure still blocks CI.
+
+This process setting improved local reproductions:
 
 ```sh
 JSC_useWasmOSR=false bun your-script.mjs
 ```
 
-The observed WASM startup failure also reproduced with PGlite's native filesystem and no adapter imports. Disabling JavaScriptCore's WASM OSR setting passed ten fresh upstream reproductions and a complete local benchmark with five measured suites plus a warm-up per backend. [Flagged local raw results](docs/benchmarks/bun12-linux-x64-wasm-osr-disabled.json) retain the process setting explicitly. CI applies this flag to the older Bun lane and to both benchmark backends; it does not establish default-settings compatibility. Prefer a current Bun release. The library does not change this process-level setting automatically.
+Disabling JavaScriptCore's WASM OSR setting passed ten fresh upstream reproductions and a complete local benchmark with five measured suites plus a warm-up per backend. [Flagged local raw results](docs/benchmarks/bun12-linux-x64-wasm-osr-disabled.json) retain the process setting explicitly. **It did not resolve hosted instability:** the flagged follow-up crashed during a Vitest batch-read benchmark. This is limited empirical evidence, not a reliable fix or required launch configuration. CI retains default-settings coverage; the library does not change this setting automatically.
 
 [Bun issue #26366](https://github.com/oven-sh/bun/issues/26366) describes a related JavaScriptCore WASM OSR issue. Our reproducer and workaround do not prove that it has the identical root cause. The initial failed matrix snapshot remains available above.
 

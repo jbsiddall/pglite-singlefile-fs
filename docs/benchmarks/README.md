@@ -25,9 +25,11 @@ The hosted Node.js 24.21.0 Linux ratios differ materially from the local run: **
 
 Runtime and host conditions vary, and SQLite FULL versus native PostgreSQL `fsync=off` remains an important durability difference. This report does not isolate one cause for the variation. The tested head and merge commits are recorded in the raw matrix snapshot.
 
-The Bun 1.2.23 startup failure subsequently reproduced with upstream PGlite NodeFS and no adapter imports. An explicitly set `JSC_useWasmOSR=false` passed repeated fresh-process reproductions; the older CI lane now applies that setting to both backends. This is a compatibility workaround, not evidence that default Bun 1.2.23 settings work. [Bun issue #26366](https://github.com/oven-sh/bun/issues/26366) is related; an identical root cause has not been established. Keep flagged rerun results separate from this original default-settings snapshot.
+The Bun 1.2.23 startup failure subsequently reproduced with upstream PGlite NodeFS and no adapter imports. An explicitly set `JSC_useWasmOSR=false` passed repeated fresh-process reproductions locally, but the [flagged hosted follow-up](https://github.com/jbsiddall/pglite-singlefile-fs/actions/runs/37043190555) still crashed during a Vitest benchmark. It is not a reliable fix. All 15 correctness-test lanes passed again; benchmark success remained incomplete. [Bun issue #26366](https://github.com/oven-sh/bun/issues/26366) is related; an identical root cause has not been established.
 
-The [separate flagged local Bun 1.2.23 report](bun12-linux-x64-wasm-osr-disabled.json) completed five measured suites and one warm-up per backend. Its environment metadata records `JSC_useWasmOSR=false`. It is a local validation of the workaround, not a replacement for the failed initial hosted snapshot.
+The [separate flagged local Bun 1.2.23 report](bun12-linux-x64-wasm-osr-disabled.json) completed five measured suites and one warm-up per backend. Its environment metadata records `JSC_useWasmOSR=false`. This is limited local evidence, not a replacement for either failed hosted run or a general compatibility guarantee.
+
+CI now retains default settings and attempts both Vitest and sampled benchmarks. Only reproduced historical Bun 1.2.23 engine-crash signatures (segmentation-fault panics or the known WASM `getWasmTableEntry` null-reference failure) are advisory. Correctness tests and benchmark assertions/checksums still gate every lane; timeouts, unknown failures, and other runtime crashes are fatal. Failure manifests and partial artifacts are retained, and releases disclose any classified advisory crash. Prefer current Bun versions; a passing required-check result must not be described as every benchmark passing.
 
 ## Large database
 

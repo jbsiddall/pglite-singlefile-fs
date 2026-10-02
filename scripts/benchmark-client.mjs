@@ -25,7 +25,7 @@ export function startWorker(options) {
   const rejectAll=(error)=>{for(const p of pending.values()){clearTimeout(p.timer);p.reject(error);}pending.clear();};
   child.on('error',rejectAll);
   child.stdin.on('error',rejectAll);
-  child.on('close',(code)=>{if(pending.size)rejectAll(new Error(`${runtime} worker exited (${code}): ${stderr}`));});
+  child.on('close',(code,signal)=>{if(pending.size)rejectAll(new Error(`[${runtime}/${options.backend}] worker exited code=${code} signal=${signal??'none'}: ${stderr}`));});
   createInterface({input:child.stdout}).on('line',line=>{
     let response;try{response=JSON.parse(line);}catch{return;}
     const promise=pending.get(response.id);if(!promise)return;pending.delete(response.id);clearTimeout(promise.timer);

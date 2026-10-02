@@ -15,7 +15,7 @@ Check an item only when the implementation or result is available. A configured 
 - [x] Verify PostgreSQL and container-WAL coordinated checkpointing.
 - [x] Review the implementation adversarially and resolve material findings.
 
-Local evidence: all 11 tests passed on Linux x86-64 under Node.js 24.19.0, Bun 1.4.2, and Deno 2.9.6. This includes generated filesystem traces, strict/relaxed reopen cycles, checkpoint/reopen checks, and pending/committed crash recovery in DELETE and WAL modes. The [initial hosted run](https://github.com/jbsiddall/pglite-singlefile-fs/actions/runs/37041731782) passed these 11 tests in all 15 runtime/platform lanes, including Linux ARM64 and macOS ARM64. Its separate sampled benchmark still failed on Bun 1.2.23; the complete workflow is not yet green.
+Local evidence: all 11 tests passed on Linux x86-64 under Node.js 24.19.0, Bun 1.4.2, and Deno 2.9.6. This includes generated filesystem traces, strict/relaxed reopen cycles, checkpoint/reopen checks, and pending/committed crash recovery in DELETE and WAL modes. The [initial hosted run](https://github.com/jbsiddall/pglite-singlefile-fs/actions/runs/37041731782) and [flagged follow-up](https://github.com/jbsiddall/pglite-singlefile-fs/actions/runs/37043190555) passed these 11 tests in all 15 runtime/platform lanes, including Linux ARM64 and macOS ARM64. Historical Bun 1.2.23 benchmarks failed; test success does not mean complete benchmark success.
 
 ## Benchmarks
 
@@ -44,7 +44,7 @@ Hosted evidence is also retained in `docs/benchmarks/initial-ci-matrix.json`. Th
 - [x] Keep privileged release work separate from untrusted PR execution.
 - [ ] Observe the configured CI matrix passing; document any unavailable checks.
 
-Initial-run artifacts are uploaded and linked from PR #2. Bun 1.2.23's default sampled benchmark failed with an upstream-reproducible WASM startup error. The older lane now uses the explicitly recorded `JSC_useWasmOSR=false` workaround for both backends; default compatibility is not claimed, and complete rerun/release status remains unchecked.
+Initial-run artifacts are uploaded and linked from PR #2. Bun 1.2.23's default sampled benchmark failed with an upstream-reproducible WASM startup error. The `JSC_useWasmOSR=false` setting helped locally but the flagged hosted follow-up crashed in Vitest, so it is not represented as a reliable fix. CI retains default settings. Only reproduced historical Bun engine-crash signatures (segmentation-fault panics or the known WASM `getWasmTableEntry` null-reference failure) are advisory. All correctness tests, benchmark assertions/checksums, timeouts, and unknown failures remain blocking in every lane. Both benchmark runs are attempted; partial reports and failure manifests remain visible, including on releases. Complete rerun/release status remains unchecked.
 
 ## Documentation and publication
 

@@ -1,0 +1,45 @@
+name: PR report links
+
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+
+# This workflow never checks out PR code or downloads/executes PR artifacts.
+permissions:
+  contents: read
+  actions: read
+  pull-requests: write
+
+jobs:
+  comment:
+    if: github.event.workflow_run.event == 'pull_request'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8
+        with:
+          script: |
+            const run = context.payload.workflow_run;
+            if (run.repository.full_name !== `${context.repo.owner}/${context.repo.repo}`) return;
+            let prs = run.pull_requests;
+            if (!prs.length) {
+              prs = (await github.rest.repos.listPullRequestsAssociatedWithCommit({
+                ...context.repo, commit_sha: run.head_sha
+              })).data;
+            }
+            const artifacts = await github.paginate(github.rest.actions.listWorkflowRunArtifacts, {
+              ...context.repo, run_id: run.id
+            });
+            const links = artifacts
+              .filter(a => !a.expired && /^reports-(node|deno|bun)-[0-9]+\.[0-9]+\.[0-9]+-(ubuntu-24\.04(?:-arm)?|macos-14)$/.test(a.name))
+              .map(a => `- [${a.name}](${run.html_url}/artifacts/${a.id})`);
+            const marker = '<!-- pglite-ci-reports -->';
+            const body = `${marker}\nTests and benchmarks for commit \`${run.head_sha.slice(0, 12)}\`: **${run.conclusion}**.\n\n[CI run](${run.html_url})\n\n${links.join('\n') || 'No report artifacts were uploaded. See the CI logs.'}\n\nArtifacts contain test HTML, benchmark reports and raw results. Download and open the HTML locally; GitHub does not serve artifact HTML as a live page.`;
+            for (const prRef of prs) {
+              const pr = (await github.rest.pulls.get({...context.repo, pull_number: prRef.number})).data;
+              if (pr.state !== 'open' || pr.head.sha !== run.head_sha) continue;
+              const comments = await github.paginate(github.rest.issues.listComments, {...context.repo, issue_number: pr.number});
+              const old = comments.find(c => c.user.login === 'github-actions[bot]' && c.body.includes(marker));
+              if (old) await github.rest.issues.updateComment({...context.repo, comment_id: old.id, body});
+              else await github.rest.issues.createComment({...context.repo, issue_number: pr.number, body});
+            }

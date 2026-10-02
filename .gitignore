@@ -1,0 +1,12 @@
+node_modules/
+reports/
+.vitest/
+benchmark-data/
+big-benchmark-data/
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm
+*.db
+*.db-wal
+*.db-shm
+.DS_Store

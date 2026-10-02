@@ -1,6 +1,6 @@
 {
   "name": "pglite-singlefile-fs",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Single-file virtual filesystem for PGlite. Portable embedded PostgreSQL on Node.js, Bun and Deno.",
   "type": "module",
   "main": "./src/index.mjs",

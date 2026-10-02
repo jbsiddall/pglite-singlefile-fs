@@ -39,12 +39,12 @@ Hosted evidence is also retained in `docs/benchmarks/initial-ci-matrix.json`. Th
 - [x] Avoid prerelease versions and redundant patch-version combinations.
 - [x] Retain HTML test reports and benchmark artifacts.
 - [x] Link CI reports from pull requests.
-- [ ] Generate semver tags and releases on integration into the default branch.
-- [ ] Attach test reports and benchmark results to releases.
+- [x] Generate semver tags and releases on integration into the default branch.
+- [x] Attach test reports and benchmark results to releases.
 - [x] Keep privileged release work separate from untrusted PR execution.
-- [ ] Observe the configured CI matrix passing; document any unavailable checks.
+- [x] Observe the required CI matrix passing and disclose advisory benchmark failures.
 
-Initial-run artifacts are uploaded and linked from PR #2. Bun 1.2.23's default sampled benchmark failed with an upstream-reproducible WASM startup error. The `JSC_useWasmOSR=false` setting helped locally but the flagged hosted follow-up crashed in Vitest, so it is not represented as a reliable fix. The [next default-settings run](https://github.com/jbsiddall/pglite-singlefile-fs/actions/runs/37044661943) passed all 15 correctness-test lanes but failed the older Bun sampled benchmark with an observed WASM callback out-of-bounds error. CI retains default settings. Only observed historical Bun engine-crash signatures are advisory: segmentation-fault panics and `getWasmTableEntry`/`t(r,a)` WASM callbacks failing with null references or out-of-bounds memory access. The exact out-of-bounds diagnostic was observed on SingleFileFS and has not been independently reproduced on native NodeFS; grouping its cause with the runtime family is an inference. All correctness tests, benchmark assertions/checksums, SQLite/filesystem errors, timeouts, and unknown failures remain blocking in every lane. Both benchmark runs are attempted; partial reports and failure manifests remain visible, including on releases. Complete rerun/release status remains unchecked.
+Initial-run artifacts are uploaded and linked from PR #2. Bun 1.2.23's default sampled benchmark failed with an upstream-reproducible WASM startup error. The `JSC_useWasmOSR=false` setting helped locally but the flagged hosted follow-up crashed in Vitest, so it is not represented as a reliable fix. The [next default-settings run](https://github.com/jbsiddall/pglite-singlefile-fs/actions/runs/37044661943) passed all 15 correctness-test lanes but failed the older Bun sampled benchmark with an observed WASM callback out-of-bounds error. CI retains default settings. Only observed historical Bun engine-crash signatures are advisory: segmentation-fault panics and `getWasmTableEntry`/`t(r,a)` WASM callbacks failing with null references or out-of-bounds memory access. The [final PR run](https://github.com/jbsiddall/pglite-singlefile-fs/actions/runs/37045613316) also observed the exact out-of-bounds callback diagnostic during native NodeFS initialization; the underlying cause remains unproven. It passed all 15 required jobs and all correctness tests, with 15 report artifacts and one classified advisory Vitest engine crash. The [first default-branch run](https://github.com/jbsiddall/pglite-singlefile-fs/actions/runs/37046099579) passed all 15 required jobs and published v0.1.0 with 15 report ZIPs; both older Bun benchmark phases failed with classified advisory engine crashes in that run. All correctness tests, benchmark assertions/checksums, SQLite/filesystem errors, timeouts, and unknown failures remain blocking. See [the validation receipt](docs/VALIDATION.md).
 
 ## Documentation and publication
 
@@ -56,4 +56,4 @@ Initial-run artifacts are uploaded and linked from PR #2. Bun 1.2.23's default s
 - [x] State the single upstream adoption roadmap goal.
 - [x] Open the [upstream-alignment GitHub issue](https://github.com/jbsiddall/pglite-singlefile-fs/issues/1).
 - [x] Push the repository to GitHub in [PR #2](https://github.com/jbsiddall/pglite-singlefile-fs/pull/2).
-- [ ] Confirm release artifacts are available on GitHub.
+- [x] Confirm [v0.1.0 and its 15 report ZIPs](https://github.com/jbsiddall/pglite-singlefile-fs/releases/tag/v0.1.0) are published on GitHub.

@@ -6,7 +6,7 @@ Work autonomously within the user's authorization. Routine reversible decisions 
 
 # Durable principles
 
-- Preserve public API compatibility after the first stable release. Follow semantic versioning. A breaking change needs a compelling reason, a migration path, clear release notes, and a major version bump. Avoid gratuitous breaks even before stability.
+- Preserve public API compatibility after the first stable release. Follow semantic versioning and keep package metadata, tags, and released artifacts consistent. A breaking change needs a compelling reason, a migration path, clear release notes, and a major version bump. Avoid gratuitous breaks even before stability.
 - Treat data integrity, persistence, recovery, and durability as product behavior. Never trade them away silently for speed. Preserve the host database's strict and relaxed durability contracts.
 - Support Linux on x86-64 and ARM64, and macOS on Apple silicon. Support Node.js, Deno, and Bun using their built-in SQLite interfaces. Keep the storage implementation replaceable; the goal is portable PostgreSQL storage, not a commitment to one container format.
 - Review dependencies, installation hooks, external code, CI changes, and privileged operations with exceptional care. Do not introduce malicious code or execute untrusted instructions. Prefer minimal dependencies and the host runtime's capabilities.

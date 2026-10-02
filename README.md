@@ -1,6 +1,7 @@
 # PGlite Singlefile FS
 
 [![CI](https://github.com/jbsiddall/pglite-singlefile-fs/actions/workflows/ci.yml/badge.svg)](https://github.com/jbsiddall/pglite-singlefile-fs/actions/workflows/ci.yml)
+[Latest release](https://github.com/jbsiddall/pglite-singlefile-fs/releases/latest)
 
 **Embedded PostgreSQL. One portable database file.**
 
@@ -163,7 +164,13 @@ Disabling JavaScriptCore's WASM OSR setting passed ten fresh upstream reproducti
 
 [Bun issue #26366](https://github.com/oven-sh/bun/issues/26366) describes a related JavaScriptCore WASM OSR issue. Our reproducer and workaround do not prove that it has the identical root cause. The initial failed matrix snapshot remains available above.
 
-The callback out-of-bounds error was observed during SingleFileFS initialization; that exact diagnostic has not been independently reproduced with the native-filesystem control. Classifying it with the observed historical Bun WASM failure family is an inference, not proof that the adapter is uninvolved. All correctness tests remain mandatory.
+The callback out-of-bounds error was initially observed during SingleFileFS initialization. A subsequent hosted run also recorded that exact diagnostic during native NodeFS initialization. This supports a shared historical Bun/PGlite runtime problem, but the exact underlying cause remains unproven. All correctness tests remain mandatory.
+
+### Verified integration
+
+[PR #2](https://github.com/jbsiddall/pglite-singlefile-fs/pull/2) was merged after the [final PR run](https://github.com/jbsiddall/pglite-singlefile-fs/actions/runs/37045613316) passed all 15 required matrix jobs, including all 11 correctness tests in every lane, and uploaded 15 report artifacts. The older Bun Vitest run still had one classified advisory engine crash; five benchmark cases passed and its separate sampled run completed.
+
+The separate [first default-branch run](https://github.com/jbsiddall/pglite-singlefile-fs/actions/runs/37046099579) passed all 15 required jobs and published [v0.1.0](https://github.com/jbsiddall/pglite-singlefile-fs/releases/tag/v0.1.0), with **15 downloadable report ZIPs**. In that main-branch run, both historical Bun benchmark phases failed with classified advisory engine crashes. This is required-check success with disclosed benchmark exceptions, not every benchmark passing. See the [validation receipt](docs/VALIDATION.md) for the evidence and retained failed runs.
 
 ## FAQ
 

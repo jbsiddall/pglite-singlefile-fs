@@ -8,6 +8,11 @@ assert.equal(classifyBenchmark({ ...base, output: crash }), 'known_historical_en
 assert.equal(classifyBenchmark({ ...base, output: wasm }), 'known_historical_engine_failure');
 const bounds = "Error: [bun/singlefile/initialize/setup] RuntimeError: Out of bounds memory access (evaluating 't(r, a)')\nat callMain (node_modules/@electric-sql/pglite/dist/index.js)";
 assert.equal(classifyBenchmark({ ...base, output: bounds }), 'known_historical_engine_failure');
+const sixArguments = "Error: [bun/singlefile/initialize/setup] RuntimeError: Out of bounds memory access (evaluating 'getWasmTableEntry(e)(t, r, a, o, _, s)')\nat callMain (node_modules/@electric-sql/pglite/dist/index.js)";
+assert.equal(classifyBenchmark({ ...base, output: sixArguments }), 'known_historical_engine_failure');
+assert.equal(classifyBenchmark({ ...base, output: sixArguments.replace('(t, r, a, o, _, s)', '($arg1)') }), 'known_historical_engine_failure');
+assert.equal(classifyBenchmark({ ...base, output: sixArguments.replace('(t, r, a, o, _, s)', '()') }), 'fatal_failure');
+assert.equal(classifyBenchmark({ ...base, output: sixArguments.replace('(t, r, a, o, _, s)', '(t, dangerous())') }), 'fatal_failure');
 const abort = '[bun/nodefs/initialize/setup] RuntimeError: Aborted(). Build with -sASSERTIONS for more info.\n    at abort (/node_modules/@electric-sql/pglite/dist/index.js:1:78246)';
 assert.equal(classifyBenchmark({ ...base, output: abort }), 'known_historical_engine_failure');
 assert.equal(classifyBenchmark({ ...base, output: 'Error: baseline iteration 1: Error: ' + abort }), 'known_historical_engine_failure');
@@ -16,7 +21,7 @@ assert.equal(classifyBenchmark({ ...base, output: abort.replace('/initialize/set
 assert.equal(classifyBenchmark({ ...base, output: abort.replace('@electric-sql/pglite', 'another-library') }), 'fatal_failure');
 assert.equal(classifyBenchmark({ ...base, output: abort.replace('\n    at abort', '\n    at otherFrame (other.js:1:1)\n    at abort') }), 'fatal_failure');
 for (const diagnostic of ['AssertionError: wrong rows', 'SQLiteError: database is locked', 'Error: SQLITE_CORRUPT', 'Error: ENOENT: no such file', 'Error: EIO: read failed', 'Error: worker timed out', 'TypeError: unrelated failure', 'Error: unrelated failure', 'Error: SQL failed', 'RuntimeError: unknown failure', 'error: unrelated failure', '[sqlite] SQLiteError: database is locked', '[other-module] Error: unrelated failure', '[unknown] RuntimeError: unknown failure']) {
-  for (const known of [abort, crash, bounds]) assert.equal(classifyBenchmark({ ...base, output: known + '\n' + diagnostic }), 'fatal_failure');
+  for (const known of [abort, crash, bounds, sixArguments]) assert.equal(classifyBenchmark({ ...base, output: known + '\n' + diagnostic }), 'fatal_failure');
 }
 assert.equal(classifyBenchmark({ ...base, output: crash + '\nError: [bun/nodefs] worker exited code=null signal=SIGSEGV: ' }), 'known_historical_engine_failure');
 assert.equal(classifyBenchmark({ ...base, output: crash + '\nError: [bun/nodefs] worker exited code=null signal=SIGKILL: ' }), 'fatal_failure');

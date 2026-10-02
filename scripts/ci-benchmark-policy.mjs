@@ -9,7 +9,7 @@ export function classifyBenchmark({ runtime, version, status, signal, error, out
   const crash = /Bun v1\.2\.23\b/.test(output)
     && /panic\([^)]*\): Segmentation fault/.test(output)
     && /Bun has crashed/.test(output);
-  const wasm = /RuntimeError: (?:access to a null reference|Out of bounds memory access)[^\n]*(?:getWasmTableEntry|evaluating 't\(r,\s*a\)')/.test(output)
+  const wasm = /RuntimeError: (?:access to a null reference|Out of bounds memory access|call_indirect to a signature that does not match)[^\n]*(?:getWasmTableEntry|evaluating 't\(r,\s*a\)')/.test(output)
     && /(?:pglite\/dist|invoke_[a-z]+)/i.test(output);
   const setupAbort = /\[bun\/(?:nodefs|singlefile)\/initialize\/setup\] RuntimeError: Aborted\(\)\. Build with -sASSERTIONS for more info\.\r?\n\s+at abort \([^\r\n]*\/@electric-sql\/pglite\/dist\/index\.js:\d+:\d+\)/.test(output);
   // Every diagnostic headline must be a known signature or our exact transport
@@ -22,7 +22,7 @@ export function classifyBenchmark({ runtime, version, status, signal, error, out
     if (/^Error: Benchmark failed for (?:nodefs|singlefile), iteration -?\d+, (?:initialize|shutdown|batchRead|batchInsert|batchUpdate|frequentRead|frequentInsert|frequentUpdate)$/.test(line)) return true;
     if (crash && /^Error: \[bun\/(?:nodefs|singlefile)\] worker exited code=null signal=SIGSEGV:\s*(?:={5,}|Bun v1\.2\.23[^\r\n]*)?$/.test(line)) return true;
     if (setupAbort && /^(?:Error: )?\[bun\/(?:nodefs|singlefile)\/initialize\/setup\] RuntimeError: Aborted\(\)\. Build with -sASSERTIONS for more info\.$/.test(line)) return true;
-    return wasm && /^(?:Error: )?(?:\[bun\/(?:nodefs|singlefile)\/(?:initialize|run|shutdown)\/(?:setup|batchRead|batchInsert|batchUpdate|frequentRead|frequentInsert|frequentUpdate)\] )?RuntimeError: (?:access to a null reference|Out of bounds memory access) \(evaluating '(?:getWasmTableEntry\([A-Za-z_$][A-Za-z0-9_$]*\)\([A-Za-z_$][A-Za-z0-9_$]*(?:,\s*[A-Za-z_$][A-Za-z0-9_$]*)*\)|t\(r,\s*a\))'\)$/.test(line);
+    return wasm && /^(?:Error: )?(?:\[bun\/(?:nodefs|singlefile)\/(?:initialize|run|shutdown)\/(?:setup|batchRead|batchInsert|batchUpdate|frequentRead|frequentInsert|frequentUpdate)\] )?RuntimeError: (?:access to a null reference|Out of bounds memory access|call_indirect to a signature that does not match) \(evaluating '(?:getWasmTableEntry\([A-Za-z_$][A-Za-z0-9_$]*\)\([A-Za-z_$][A-Za-z0-9_$]*(?:,\s*[A-Za-z_$][A-Za-z0-9_$]*)*\)|t\(r,\s*a\))'\)$/.test(line);
   };
   if (errorLines.some(line => !allowedDiagnostic(line))) return 'fatal_failure';
   return crash || wasm || setupAbort ? 'known_historical_engine_failure' : 'fatal_failure';

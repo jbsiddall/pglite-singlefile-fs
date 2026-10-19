@@ -47,7 +47,10 @@ export class Db extends DurableObject {
         return this.started ??= (async () => {
             this.importState.markStarted();
             this.fs = new SingleFileFS('do', { store: this.sql });
-            this.db = await PGlite.create({ fs: this.fs, pgliteWasmModule: pgliteWasm, initdbWasmModule: initdbWasm, fsBundle: new Blob([fsBundle]) });
+            this.db = await PGlite.create({
+                fs: this.fs, pgliteWasmModule: pgliteWasm, initdbWasmModule: initdbWasm, fsBundle: new Blob([fsBundle]),
+                startParams: [...PGlite.defaultStartParams, '-c', 'shared_buffers=16MB', '-c', 'work_mem=1MB', '-c', 'maintenance_work_mem=16MB', '-c', 'max_connections=10'],
+            });
         })();
     }
 

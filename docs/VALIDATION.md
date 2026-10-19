@@ -12,7 +12,17 @@ The host-store filesystem now defers metadata with page changes. Regression test
 
 [The local comparison](benchmarks/cloudflare-do-local-atomicity.json) retains three complete HTTP benchmark runs per variant and conditions. Bulk insert measured 1.10× and bulk update 1.04× baseline medians; individual updates were unchanged in this run. These small local samples do not establish production costs.
 
-Real Cloudflare deployment was not attempted: neither `CLOUDFLARE_API_TOKEN` nor `CLOUDFLARE_ACCOUNT_ID` was configured. API access through the environment proxy was verified. The 128 MB production memory limit, remote cold starts, durable commit latency, complete PostgreSQL crash recovery and Neon comparison remain unverified. Runtime-loaded PL/pgSQL failed locally because workerd forbids compiling its `.so` WASM module. No newer hosted matrix result is implied by these local checks.
+[Hosted CI run 39243091166](https://github.com/jbsiddall/pglite-singlefile-fs/actions/runs/39243091166) passed all 15 runtime/platform jobs for `c3efa4f` (PR merge test commit `b2d5f79`). All 15 downloaded artifact digests were checked; each report records 29 passing tests and successful Vitest and sampled benchmark phases, including historical Bun 1.2.23. This is evidence for that revision, not an implied result for later commits.
+
+## Durable Object production probe, 2026-10-19
+
+The authenticated Cloudflare plugin deployed a throwaway Worker and stored its bearer token as a Cloudflare secret. A temporary, explicitly approved service-token Access application admitted only the probe while the account-wide deny policy stayed enabled. Seeding uploaded 998 nodes and 3,712 chunks. Default PGlite settings then failed the first query with HTTP 400 and `RangeError: Invalid typed array length: 197722112`. A Node control reproduced heap growth from 128 MiB to 157.125 MiB to 188.5625 MiB, whose final byte length matches the error. Cloudflare recorded a handled error, not an `exceededMemory` outcome; the precise production failure cause was not established.
+
+Appending `shared_buffers=16MB`, `work_mem=1MB`, `maintenance_work_mem=16MB`, and `max_connections=10` to PGlite’s default startup parameters allowed `SELECT version()` and the complete HTTP benchmark on real Cloudflare. The example now uses those settings. The first successful request took 1,197 ms at the client after redeployment; that includes proxy, network and Access overhead. [The sanitized receipt and complete benchmark](benchmarks/cloudflare-do-production.json) retain conditions and limitations. These workloads ran under production memory enforcement, but exact memory usage and headroom were not measured. The supplied WASM binary rejects an initial memory below 128 MiB.
+
+Production WSS checks also passed: psql through the Node bridge verified explicit and disconnect rollback; Drizzle’s `neon-serverless` adapter verified parameters, transactions and SQL-error recovery. After deploying the clean source bundle, a query confirmed all 20,100 benchmark rows remained and `pg_settings` confirmed the reduced budgets. This is persistence across a deployment, not a simulated power-loss test. The temporary Access application, service token and upload staging namespaces were deleted; the account-wide deny policy remains enabled.
+
+Isolated cold starts and commit latency, complete PostgreSQL crash recovery and Neon comparison remain unverified. Runtime-loaded PL/pgSQL failed locally because workerd forbids compiling its `.so` WASM module.
 
 ## Integration
 

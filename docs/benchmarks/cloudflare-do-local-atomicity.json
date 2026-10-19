@@ -1,0 +1,500 @@
+{
+  "date": "2026-10-19",
+  "scope": "Local workerd HTTP; isolates SingleFileFS deferred host-store writes. No real Cloudflare deployment.",
+  "environment": {
+    "os": "Linux",
+    "arch": "x86_64",
+    "node": "v24.19.0",
+    "pglite": "0.5.8",
+    "wrangler": "4.151.1",
+    "workerd": "1.20261012.1",
+    "workerConfig": {
+      "name": "pglite-do-example",
+      "main": "src/worker.mjs",
+      "compatibility_date": "2026-10-01",
+      "compatibility_flags": [
+        "nodejs_compat"
+      ],
+      "define": {
+        "import.meta.url": "\"file:///pglite/index.js\""
+      },
+      "durable_objects": {
+        "bindings": [
+          {
+            "name": "DB",
+            "class_name": "Db"
+          }
+        ]
+      },
+      "migrations": [
+        {
+          "tag": "v1",
+          "new_sqlite_classes": [
+            "Db"
+          ]
+        }
+      ],
+      "rules": [
+        {
+          "type": "CompiledWasm",
+          "globs": [
+            "**/*.wasm"
+          ],
+          "fallthrough": true
+        },
+        {
+          "type": "Data",
+          "globs": [
+            "**/*.data"
+          ],
+          "fallthrough": true
+        }
+      ]
+    }
+  },
+  "sources": {
+    "baselineCommit": "b5d1b853111b50ab23b2fba2694a45a92e5df1ee",
+    "beforeSingleFileFsSha256": "910f07e63f1c753fc1f9ee7b7a919fc4ab3ee6fb6fb02401bcdd3449857e81d0",
+    "afterSingleFileFsSha256": "37ecd77cec90060134861200d6665313ff3c49efca20982040fd597a1f287b3c",
+    "benchmarkSha256": "eef38db1e7cb97cbbd2528428de9e2c6e6d35a0af85ff5a952a0775e5f0830bb",
+    "seedSqliteSha256": "952e582a2114548e0c4ee98502690b8092b886f207e0fd4e66d43a07c070020d",
+    "worker.mjsSha256": "5cb3dfe4cb6d8060efb9032dd4179e1b03daa6515a6318081350aca655e19b73",
+    "ws-transport.mjsSha256": "34f331116c981bfd5a54b86b9579ca6966b59b8c269b71c78e14745fc79b0935",
+    "import-state.mjsSha256": "71d0af142228187276b6cc94a370fc0c475f0379b96dd4b24f7beeb13a535911",
+    "afterStorageCommit": "20423ad"
+  },
+  "method": {
+    "order": [
+      "before1",
+      "after1",
+      "after2",
+      "before2",
+      "before3",
+      "after3"
+    ],
+    "freshStoragePerVariant": true,
+    "sameSeedImage": true,
+    "sameWorkerCodeExceptSingleFileFs": true,
+    "warmup": "GET /stats starts each engine before measured suites; no full workload warmup excluded",
+    "cache": "OS caches not cleared; three suites per variant reuse each initialized database and drop/recreate benchmark tables",
+    "requestBody": "one SQL statement per HTTP request",
+    "client": "Node fetch on same Linux host using localhost:8800/8801",
+    "durability": "DurableObjectStore supplied ctx.storage.transactionSync; default PGlite strict persistence",
+    "metadataWorkload": "20 cycles of separate CREATE TABLE, INSERT 100 rows, TRUNCATE, DROP TABLE requests; median across 80 requests",
+    "bulkUpdateRows": 20100,
+    "exclusions": "Earlier exploratory runs used different Worker code between variants or failed token setup. They are not the isolated comparison and are not substituted for these three complete pairs."
+  },
+  "limits": [
+    "Three runs cannot establish a universal cost or statistical significance.",
+    "Bulk insert/update have one sample per suite; per-suite p95 is not informative.",
+    "Local workerd does not establish 128 MB production compliance, durable commit latency or remote cold starts.",
+    "Comparison changes filesystem persistence behavior; it is not equal crash safety before and after."
+  ],
+  "summary": {
+    "insert_single_x100": {
+      "beforeMedianOfMediansMs": 5.67,
+      "afterMedianOfMediansMs": 5.47,
+      "afterOverBefore": 0.9647
+    },
+    "insert_bulk_20000_rows": {
+      "beforeMedianOfMediansMs": 128.09,
+      "afterMedianOfMediansMs": 140.29,
+      "afterOverBefore": 1.0952
+    },
+    "select_point_x200": {
+      "beforeMedianOfMediansMs": 4.82,
+      "afterMedianOfMediansMs": 4.76,
+      "afterOverBefore": 0.9876
+    },
+    "select_scan_x5": {
+      "beforeMedianOfMediansMs": 8.27,
+      "afterMedianOfMediansMs": 8.05,
+      "afterOverBefore": 0.9734
+    },
+    "update_single_x100": {
+      "beforeMedianOfMediansMs": 4.81,
+      "afterMedianOfMediansMs": 4.81,
+      "afterOverBefore": 1.0
+    },
+    "update_bulk_20000_rows": {
+      "beforeMedianOfMediansMs": 157.86,
+      "afterMedianOfMediansMs": 163.55,
+      "afterOverBefore": 1.036
+    },
+    "metadata_create_truncate_drop_x20": {
+      "beforeMedianOfMediansMs": 7.44,
+      "afterMedianOfMediansMs": 6.78,
+      "afterOverBefore": 0.9113
+    }
+  },
+  "before": [
+    {
+      "label": "isolated-before-1",
+      "results": {
+        "insert_single_x100": {
+          "n": 100,
+          "medianMs": 7.36,
+          "p95Ms": 24.5,
+          "totalMs": 1011.8,
+          "rowsRead": 203,
+          "rowsWritten": 206
+        },
+        "insert_bulk_20000_rows": {
+          "n": 1,
+          "medianMs": 145.99,
+          "p95Ms": 145.99,
+          "totalMs": 146,
+          "rowsRead": 12,
+          "rowsWritten": 857
+        },
+        "select_point_x200": {
+          "n": 200,
+          "medianMs": 4.82,
+          "p95Ms": 6.91,
+          "totalMs": 1032.2,
+          "rowsRead": 1,
+          "rowsWritten": 0
+        },
+        "select_scan_x5": {
+          "n": 5,
+          "medianMs": 8.27,
+          "p95Ms": 16.67,
+          "totalMs": 49.1,
+          "rowsRead": 12,
+          "rowsWritten": 0
+        },
+        "update_single_x100": {
+          "n": 100,
+          "medianMs": 4.81,
+          "p95Ms": 7.09,
+          "totalMs": 511.8,
+          "rowsRead": 204,
+          "rowsWritten": 209
+        },
+        "update_bulk_20000_rows": {
+          "n": 1,
+          "medianMs": 157.86,
+          "p95Ms": 157.86,
+          "totalMs": 157.9,
+          "rowsRead": 4,
+          "rowsWritten": 1234
+        },
+        "metadata_create_truncate_drop_x20": {
+          "n": 80,
+          "medianMs": 7.96,
+          "p95Ms": 13.16,
+          "totalMs": 681.7,
+          "rowsRead": 917,
+          "rowsWritten": 1044
+        }
+      }
+    },
+    {
+      "label": "isolated-before-2",
+      "results": {
+        "insert_single_x100": {
+          "n": 100,
+          "medianMs": 5.67,
+          "p95Ms": 8.98,
+          "totalMs": 600,
+          "rowsRead": 203,
+          "rowsWritten": 206
+        },
+        "insert_bulk_20000_rows": {
+          "n": 1,
+          "medianMs": 121.37,
+          "p95Ms": 121.37,
+          "totalMs": 121.4,
+          "rowsRead": 9,
+          "rowsWritten": 862
+        },
+        "select_point_x200": {
+          "n": 200,
+          "medianMs": 4.74,
+          "p95Ms": 8.02,
+          "totalMs": 1029.8,
+          "rowsRead": 0,
+          "rowsWritten": 0
+        },
+        "select_scan_x5": {
+          "n": 5,
+          "medianMs": 7.68,
+          "p95Ms": 8.08,
+          "totalMs": 38.3,
+          "rowsRead": 0,
+          "rowsWritten": 0
+        },
+        "update_single_x100": {
+          "n": 100,
+          "medianMs": 4.62,
+          "p95Ms": 7.83,
+          "totalMs": 489.9,
+          "rowsRead": 201,
+          "rowsWritten": 209
+        },
+        "update_bulk_20000_rows": {
+          "n": 1,
+          "medianMs": 149.09,
+          "p95Ms": 149.09,
+          "totalMs": 149.1,
+          "rowsRead": 4,
+          "rowsWritten": 1234
+        },
+        "metadata_create_truncate_drop_x20": {
+          "n": 80,
+          "medianMs": 7.31,
+          "p95Ms": 12.29,
+          "totalMs": 648.3,
+          "rowsRead": 909,
+          "rowsWritten": 1036
+        }
+      }
+    },
+    {
+      "label": "isolated-before-3",
+      "results": {
+        "insert_single_x100": {
+          "n": 100,
+          "medianMs": 5.4,
+          "p95Ms": 9.18,
+          "totalMs": 583.7,
+          "rowsRead": 203,
+          "rowsWritten": 206
+        },
+        "insert_bulk_20000_rows": {
+          "n": 1,
+          "medianMs": 128.09,
+          "p95Ms": 128.09,
+          "totalMs": 128.1,
+          "rowsRead": 6,
+          "rowsWritten": 857
+        },
+        "select_point_x200": {
+          "n": 200,
+          "medianMs": 5.92,
+          "p95Ms": 11.83,
+          "totalMs": 1341.2,
+          "rowsRead": 0,
+          "rowsWritten": 0
+        },
+        "select_scan_x5": {
+          "n": 5,
+          "medianMs": 16.97,
+          "p95Ms": 18.53,
+          "totalMs": 78.6,
+          "rowsRead": 0,
+          "rowsWritten": 0
+        },
+        "update_single_x100": {
+          "n": 100,
+          "medianMs": 7.34,
+          "p95Ms": 18.51,
+          "totalMs": 818,
+          "rowsRead": 201,
+          "rowsWritten": 209
+        },
+        "update_bulk_20000_rows": {
+          "n": 1,
+          "medianMs": 169.05,
+          "p95Ms": 169.05,
+          "totalMs": 169,
+          "rowsRead": 7,
+          "rowsWritten": 1237
+        },
+        "metadata_create_truncate_drop_x20": {
+          "n": 80,
+          "medianMs": 7.44,
+          "p95Ms": 12.62,
+          "totalMs": 636.3,
+          "rowsRead": 906,
+          "rowsWritten": 1036
+        }
+      }
+    }
+  ],
+  "after": [
+    {
+      "label": "isolated-after-1",
+      "results": {
+        "insert_single_x100": {
+          "n": 100,
+          "medianMs": 5.72,
+          "p95Ms": 8.31,
+          "totalMs": 600.6,
+          "rowsRead": 203,
+          "rowsWritten": 206
+        },
+        "insert_bulk_20000_rows": {
+          "n": 1,
+          "medianMs": 140.29,
+          "p95Ms": 140.29,
+          "totalMs": 140.3,
+          "rowsRead": 13,
+          "rowsWritten": 857
+        },
+        "select_point_x200": {
+          "n": 200,
+          "medianMs": 4.77,
+          "p95Ms": 7.26,
+          "totalMs": 1033.2,
+          "rowsRead": 1,
+          "rowsWritten": 0
+        },
+        "select_scan_x5": {
+          "n": 5,
+          "medianMs": 9.67,
+          "p95Ms": 16.36,
+          "totalMs": 52.9,
+          "rowsRead": 12,
+          "rowsWritten": 0
+        },
+        "update_single_x100": {
+          "n": 100,
+          "medianMs": 4.81,
+          "p95Ms": 8.73,
+          "totalMs": 529.7,
+          "rowsRead": 204,
+          "rowsWritten": 209
+        },
+        "update_bulk_20000_rows": {
+          "n": 1,
+          "medianMs": 163.55,
+          "p95Ms": 163.55,
+          "totalMs": 163.6,
+          "rowsRead": 4,
+          "rowsWritten": 1234
+        },
+        "metadata_create_truncate_drop_x20": {
+          "n": 80,
+          "medianMs": 7.02,
+          "p95Ms": 10.06,
+          "totalMs": 588.6,
+          "rowsRead": 1037,
+          "rowsWritten": 1044
+        }
+      }
+    },
+    {
+      "label": "isolated-after-2",
+      "results": {
+        "insert_single_x100": {
+          "n": 100,
+          "medianMs": 5.32,
+          "p95Ms": 7.71,
+          "totalMs": 548.1,
+          "rowsRead": 203,
+          "rowsWritten": 206
+        },
+        "insert_bulk_20000_rows": {
+          "n": 1,
+          "medianMs": 161.09,
+          "p95Ms": 161.09,
+          "totalMs": 161.1,
+          "rowsRead": 11,
+          "rowsWritten": 862
+        },
+        "select_point_x200": {
+          "n": 200,
+          "medianMs": 4.68,
+          "p95Ms": 9,
+          "totalMs": 1045.3,
+          "rowsRead": 0,
+          "rowsWritten": 0
+        },
+        "select_scan_x5": {
+          "n": 5,
+          "medianMs": 8.05,
+          "p95Ms": 8.14,
+          "totalMs": 40.3,
+          "rowsRead": 0,
+          "rowsWritten": 0
+        },
+        "update_single_x100": {
+          "n": 100,
+          "medianMs": 4.79,
+          "p95Ms": 7.74,
+          "totalMs": 524.1,
+          "rowsRead": 201,
+          "rowsWritten": 209
+        },
+        "update_bulk_20000_rows": {
+          "n": 1,
+          "medianMs": 142.55,
+          "p95Ms": 142.55,
+          "totalMs": 142.5,
+          "rowsRead": 4,
+          "rowsWritten": 1234
+        },
+        "metadata_create_truncate_drop_x20": {
+          "n": 80,
+          "medianMs": 6.74,
+          "p95Ms": 10.63,
+          "totalMs": 581.4,
+          "rowsRead": 1029,
+          "rowsWritten": 1036
+        }
+      }
+    },
+    {
+      "label": "isolated-after-3",
+      "results": {
+        "insert_single_x100": {
+          "n": 100,
+          "medianMs": 5.47,
+          "p95Ms": 9.28,
+          "totalMs": 600,
+          "rowsRead": 203,
+          "rowsWritten": 206
+        },
+        "insert_bulk_20000_rows": {
+          "n": 1,
+          "medianMs": 113.11,
+          "p95Ms": 113.11,
+          "totalMs": 113.1,
+          "rowsRead": 7,
+          "rowsWritten": 857
+        },
+        "select_point_x200": {
+          "n": 200,
+          "medianMs": 4.76,
+          "p95Ms": 7.63,
+          "totalMs": 1051.6,
+          "rowsRead": 0,
+          "rowsWritten": 0
+        },
+        "select_scan_x5": {
+          "n": 5,
+          "medianMs": 8,
+          "p95Ms": 10.53,
+          "totalMs": 41.8,
+          "rowsRead": 0,
+          "rowsWritten": 0
+        },
+        "update_single_x100": {
+          "n": 100,
+          "medianMs": 4.82,
+          "p95Ms": 8.1,
+          "totalMs": 519.1,
+          "rowsRead": 201,
+          "rowsWritten": 209
+        },
+        "update_bulk_20000_rows": {
+          "n": 1,
+          "medianMs": 174.99,
+          "p95Ms": 174.99,
+          "totalMs": 175,
+          "rowsRead": 8,
+          "rowsWritten": 1237
+        },
+        "metadata_create_truncate_drop_x20": {
+          "n": 80,
+          "medianMs": 6.78,
+          "p95Ms": 9.97,
+          "totalMs": 557.7,
+          "rowsRead": 1026,
+          "rowsWritten": 1036
+        }
+      }
+    }
+  ]
+}

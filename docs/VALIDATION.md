@@ -2,6 +2,30 @@
 
 This receipt records verified outcomes separately from configured automation. It does not replace raw reports or imply that every benchmark passed.
 
+## Durable Object branch: local validation, 2026-10-19
+
+On Linux x86-64 with Node 24.19.0, the branch passes all 29 tests, typechecking, release-policy checks, six Vitest benchmarks, the sampled native/filesystem benchmark, and a Wrangler 4.151.1 deployment dry run. Local workerd accepts authenticated PostgreSQL WebSockets from psql 17.11 through the Node bridge and Drizzle's `neon-serverless` adapter, including parameters, transactions, SQL-error recovery and rollback after disconnect. Unauthorized requests fail; an active socket excludes HTTP queries and a second socket. The persistent startup marker refuses imports after a workerd restart. Six process-restart checks cover cold SQL following rejected imports, authorization failures, unknown paths and wrong methods; unread bodies are drained to avoid the reproduced workerd forwarding error.
+
+[The first PR run](https://github.com/jbsiddall/pglite-singlefile-fs/actions/runs/39242349949) passed ten Node/Deno jobs but failed all five Bun jobs. Its reports show 17 new host-store/WebSocket tests passing and 11 native tests failing in the Bun lanes. Bun's native SQLite `transaction()` returns a callable wrapper; treating it as the supplied host store's immediate transaction callback skipped native flushes. The callback is now used only for supplied stores. A focused regression fails before that correction, and the full 29-test suite passes locally with the real Bun 1.4.2 binary afterward. The failed run remains visible; it is not classified as an advisory engine crash.
+
+The host-store filesystem now defers metadata with page changes. Regression tests establish unchanged persisted rows before flush, all-or-nothing rollback when the supplied transaction callback throws, truncate/extend read behavior, and retention of pending state on failure. Mutation checks independently show the rollback and trim tests fail when their protections are removed. WebSocket success bytes wait for the raw protocol call's persistence promise; a gated-flush regression catches the earlier acknowledgement bug.
+
+[The local comparison](benchmarks/cloudflare-do-local-atomicity.json) retains three complete HTTP benchmark runs per variant and conditions. Bulk insert measured 1.10× and bulk update 1.04× baseline medians; individual updates were unchanged in this run. These small local samples do not establish production costs.
+
+[Hosted CI run 39243091166](https://github.com/jbsiddall/pglite-singlefile-fs/actions/runs/39243091166) passed all 15 runtime/platform jobs for `c3efa4f` (PR merge test commit `b2d5f79`). All 15 downloaded artifact digests were checked; each report records 29 passing tests and successful Vitest and sampled benchmark phases, including historical Bun 1.2.23. This is evidence for that revision, not an implied result for later commits.
+
+## Durable Object production probe, 2026-10-19
+
+The authenticated Cloudflare plugin deployed a throwaway Worker and stored its bearer token as a Cloudflare secret. A temporary, explicitly approved service-token Access application admitted only the probe while the account-wide deny policy stayed enabled. Seeding uploaded 998 nodes and 3,712 chunks. Default PGlite settings then failed the first query with HTTP 400 and `RangeError: Invalid typed array length: 197722112`. A Node control reproduced heap growth from 128 MiB to 157.125 MiB to 188.5625 MiB, whose final byte length matches the error. Cloudflare recorded a handled error, not an `exceededMemory` outcome; the precise production failure cause was not established.
+
+Appending `shared_buffers=16MB`, `work_mem=1MB`, `maintenance_work_mem=16MB`, and `max_connections=10` to PGlite’s default startup parameters allowed `SELECT version()` and the complete HTTP benchmark on real Cloudflare. The example now uses those settings. The first successful request took 1,197 ms at the client after redeployment; that includes proxy, network and Access overhead. [The sanitized receipt and complete benchmark](benchmarks/cloudflare-do-production.json) retain conditions and limitations. These workloads ran under production memory enforcement, but exact memory usage and headroom were not measured. The supplied WASM binary rejects an initial memory below 128 MiB.
+
+Production WSS checks also passed: psql through the Node bridge verified explicit and disconnect rollback; Drizzle’s `neon-serverless` adapter verified parameters, transactions and SQL-error recovery. After deploying the clean source bundle, a query confirmed all 20,100 benchmark rows remained and `pg_settings` confirmed the reduced budgets. This is persistence across a deployment, not a simulated power-loss test. The temporary Access application, service token and upload staging namespaces were deleted; the account-wide deny policy remains enabled.
+
+Prisma Client 7.10.1 subsequently passed the generated TypeScript smoke on Node against both local workerd and real Cloudflare, with both the direct Neon-adapter WebSocket path and the PostgreSQL adapter through the bridge. [The receipt](benchmarks/cloudflare-do-prisma.json) retains those four runs and the corrected runtime/assets dependency mismatch. These checks do not certify Prisma Migrate or Prisma running inside a Worker. [Capacity controls and external provider comparisons](CLOUDFLARE-COMPARISON.md) distinguish documented quotas from tested capacity and keep vendor/user reports separate from a controlled head-to-head benchmark.
+
+Isolated cold starts and commit latency, complete PostgreSQL crash recovery and Neon comparison remain unverified. Runtime-loaded PL/pgSQL failed locally because workerd forbids compiling its `.so` WASM module.
+
 ## Integration
 
 - [PR #2](https://github.com/jbsiddall/pglite-singlefile-fs/pull/2) merged into the default branch after the [final PR run](https://github.com/jbsiddall/pglite-singlefile-fs/actions/runs/37045613316).

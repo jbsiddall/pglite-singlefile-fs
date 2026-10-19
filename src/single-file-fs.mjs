@@ -5,6 +5,13 @@ import { Buffer } from 'node:buffer';
 import { setImmediate } from 'node:timers';
 import { BaseFilesystem, ERRNO_CODES } from '@electric-sql/pglite/basefs';
 const PAGE = 8192;
+const SCHEMA = [
+    'CREATE TABLE IF NOT EXISTS nodes (ino INTEGER PRIMARY KEY, path TEXT UNIQUE, mode INTEGER NOT NULL, size INTEGER NOT NULL DEFAULT 0, mtime INTEGER NOT NULL)',
+    'CREATE TABLE IF NOT EXISTS chunks (ino INTEGER NOT NULL, page INTEGER NOT NULL, data BLOB NOT NULL, PRIMARY KEY (ino,page))',
+    "INSERT OR IGNORE INTO nodes(path,mode,mtime) VALUES ('/',16832,0)",
+    'DELETE FROM chunks WHERE ino IN (SELECT ino FROM nodes WHERE path IS NULL)',
+    'DELETE FROM nodes WHERE path IS NULL',
+];
 const bytes = value => {
     if (value instanceof ArrayBuffer || (typeof SharedArrayBuffer !== 'undefined' && value instanceof SharedArrayBuffer))
         return new Uint8Array(value);
@@ -25,7 +32,7 @@ const validateIo = (buffer, offset, length, position) => {
 // PostgreSQL remains the SQL engine. SQLite stores opaque file bytes. Missing
 // chunks and omitted zero suffixes read as zeros; no PostgreSQL parsing needed.
 export class SingleFileFS extends BaseFilesystem {
-    constructor(filename, { durable = true, cacheBytes = 0, journalMode, pageSize, chunkTable, lockingMode = 'NORMAL', sqliteCacheKiB = 2000, walAutoCheckpointBytes = 32 * 1024 * 1024 } = {}) {
+    constructor(filename, { store, durable = true, cacheBytes = 0, journalMode, pageSize, chunkTable, lockingMode = 'NORMAL', sqliteCacheKiB = 2000, walAutoCheckpointBytes = 32 * 1024 * 1024 } = {}) {
         super();
         if (typeof filename !== 'string' || !filename.length)
             throw new TypeError('filename must be a non-empty string');
@@ -50,48 +57,60 @@ export class SingleFileFS extends BaseFilesystem {
             throw new Error('sqliteCacheKiB must be positive');
         if (!Number.isSafeInteger(walAutoCheckpointBytes) || walAutoCheckpointBytes <= 0)
             throw new Error('walAutoCheckpointBytes must be positive');
-        this.store = openDatabase(this.filename);
+        this.store = store ?? openDatabase(this.filename);
+        this.deferNodeWrites = !!store;
         try {
-            assertContainerFormat(this.store);
-            // Page size and layout are creation choices. Never silently rebuild an
-            // existing image when requested options disagree with its persisted format.
-            const schema = this.store.prepare("SELECT sql FROM sqlite_schema WHERE name='chunks'").get();
-            const requestedPageSize = pageSize ?? (schema ? undefined : 8192);
-            if (requestedPageSize !== undefined)
-                this.store.exec('PRAGMA page_size=' + requestedPageSize);
-            this.pageSize = this.store.prepare('PRAGMA page_size').get().page_size;
-            if (pageSize !== undefined && this.pageSize !== pageSize)
-                throw new Error('Existing image has a different pageSize');
-            this.chunkTable = schema ? (/WITHOUT\s+ROWID/i.test(schema.sql) ? 'without-rowid' : 'rowid') : (chunkTable ?? 'rowid');
-            if (schema && chunkTable !== undefined && this.chunkTable !== chunkTable)
-                throw new Error('Existing image has a different chunkTable layout');
-            // WAL+FULL retains SQLite protection independently of PostgreSQL WAL.
-            // DELETE+EXTRA remains selectable; explicit fast mode is NOT crash-safe.
-            this.store.exec(`PRAGMA locking_mode=${lockingMode}; PRAGMA mmap_size=0; PRAGMA journal_mode=${journalMode};
-      PRAGMA synchronous=${durable ? (journalMode === 'WAL' ? 'FULL' : 'EXTRA') : 'OFF'}; PRAGMA temp_store=MEMORY;
-      CREATE TABLE IF NOT EXISTS nodes (
-        ino INTEGER PRIMARY KEY, path TEXT UNIQUE, mode INTEGER NOT NULL,
-        size INTEGER NOT NULL DEFAULT 0, mtime INTEGER NOT NULL);
-      CREATE TABLE IF NOT EXISTS chunks (
-        ino INTEGER NOT NULL, page INTEGER NOT NULL, data BLOB NOT NULL,
-        PRIMARY KEY (ino,page)) ${this.chunkTable === 'without-rowid' ? 'WITHOUT ROWID' : ''};
-      INSERT OR IGNORE INTO nodes(path,mode,mtime) VALUES ('/',16832,0);
-      DELETE FROM chunks WHERE ino IN (SELECT ino FROM nodes WHERE path IS NULL);
-      DELETE FROM nodes WHERE path IS NULL;`);
-            this.journalMode = this.store.prepare('PRAGMA journal_mode').get().journal_mode;
-            if (durable && this.journalMode !== journalMode.toLowerCase())
-                throw new Error('Storage could not enable the requested durable journal mode');
-            markContainerFormat(this.store);
-            this.closeWithDeleteJournal = this.journalMode === 'wal' && disablePersistentWal(this.store);
-            if (sqliteCacheKiB !== undefined)
-                this.store.exec('PRAGMA cache_size=-' + sqliteCacheKiB);
-            if (this.journalMode === 'wal')
-                this.store.exec('PRAGMA wal_autocheckpoint=' + Math.max(1, Math.floor(walAutoCheckpointBytes / this.pageSize)));
+            if (store) {
+                // Host-managed SQLite (e.g. a Durable Object): the host owns durability,
+                // journaling and the file format, so none of the PRAGMA/format steps apply.
+                this.pageSize = PAGE;
+                this.chunkTable = chunkTable ?? 'rowid';
+                this.journalMode = 'external';
+                this.closeWithDeleteJournal = false;
+                for (const statement of SCHEMA) this.store.exec(statement);
+            }
+            else {
+                assertContainerFormat(this.store);
+                // Page size and layout are creation choices. Never silently rebuild an
+                // existing image when requested options disagree with its persisted format.
+                const schema = this.store.prepare("SELECT sql FROM sqlite_schema WHERE name='chunks'").get();
+                const requestedPageSize = pageSize ?? (schema ? undefined : 8192);
+                if (requestedPageSize !== undefined)
+                    this.store.exec('PRAGMA page_size=' + requestedPageSize);
+                this.pageSize = this.store.prepare('PRAGMA page_size').get().page_size;
+                if (pageSize !== undefined && this.pageSize !== pageSize)
+                    throw new Error('Existing image has a different pageSize');
+                this.chunkTable = schema ? (/WITHOUT\s+ROWID/i.test(schema.sql) ? 'without-rowid' : 'rowid') : (chunkTable ?? 'rowid');
+                if (schema && chunkTable !== undefined && this.chunkTable !== chunkTable)
+                    throw new Error('Existing image has a different chunkTable layout');
+                // WAL+FULL retains SQLite protection independently of PostgreSQL WAL.
+                // DELETE+EXTRA remains selectable; explicit fast mode is NOT crash-safe.
+                this.store.exec(`PRAGMA locking_mode=${lockingMode}; PRAGMA mmap_size=0; PRAGMA journal_mode=${journalMode};
+          PRAGMA synchronous=${durable ? (journalMode === 'WAL' ? 'FULL' : 'EXTRA') : 'OFF'}; PRAGMA temp_store=MEMORY;
+          CREATE TABLE IF NOT EXISTS nodes (
+            ino INTEGER PRIMARY KEY, path TEXT UNIQUE, mode INTEGER NOT NULL,
+            size INTEGER NOT NULL DEFAULT 0, mtime INTEGER NOT NULL);
+          CREATE TABLE IF NOT EXISTS chunks (
+            ino INTEGER NOT NULL, page INTEGER NOT NULL, data BLOB NOT NULL,
+            PRIMARY KEY (ino,page)) ${this.chunkTable === 'without-rowid' ? 'WITHOUT ROWID' : ''};
+          INSERT OR IGNORE INTO nodes(path,mode,mtime) VALUES ('/',16832,0);
+          DELETE FROM chunks WHERE ino IN (SELECT ino FROM nodes WHERE path IS NULL);
+          DELETE FROM nodes WHERE path IS NULL;`);
+                this.journalMode = this.store.prepare('PRAGMA journal_mode').get().journal_mode;
+                if (durable && this.journalMode !== journalMode.toLowerCase())
+                    throw new Error('Storage could not enable the requested durable journal mode');
+                markContainerFormat(this.store);
+                this.closeWithDeleteJournal = this.journalMode === 'wal' && disablePersistentWal(this.store);
+                if (sqliteCacheKiB !== undefined)
+                    this.store.exec('PRAGMA cache_size=-' + sqliteCacheKiB);
+                if (this.journalMode === 'wal')
+                    this.store.exec('PRAGMA wal_autocheckpoint=' + Math.max(1, Math.floor(walAutoCheckpointBytes / this.pageSize)));
+            }
             const prepare = sql => this.store.prepare(sql);
             this.sql = {
                 begin: prepare('BEGIN'),
                 commit: prepare('COMMIT'),
-                create: prepare('INSERT INTO nodes(path,mode,mtime) VALUES (?,?,?)'),
+                create: prepare(store ? 'INSERT INTO nodes(ino,path,mode,mtime) VALUES (?,?,?,?)' : 'INSERT INTO nodes(path,mode,mtime) VALUES (?,?,?)'),
                 size: prepare('UPDATE nodes SET size=?,mtime=? WHERE ino=?'),
                 mode: prepare('UPDATE nodes SET mode=? WHERE ino=?'),
                 time: prepare('UPDATE nodes SET mtime=? WHERE ino=?'),
@@ -107,16 +126,20 @@ export class SingleFileFS extends BaseFilesystem {
                 .map(mode => [mode, prepare('PRAGMA wal_checkpoint(' + mode + ')')]));
             this.nodes = new Map();
             this.inodes = new Map();
+            this.nextIno = 1;
             for (const n of this.store.prepare('SELECT * FROM nodes').all()) {
                 n.persistedSize = n.size;
                 this.nodes.set(n.path, n);
                 this.inodes.set(n.ino, n);
+                this.nextIno = Math.max(this.nextIno, n.ino + 1);
             }
             this.fds = new Map();
             this.fdFlags = new Map();
             this.nextFd = 1;
             this.dirty = new Map();
             this.dirtyNodes = new Set();
+            this.nodeWrites = [];
+            this.trims = new Map();
             this.cache = new Map();
             this.cachePages = Math.max(0, Math.floor(cacheBytes / PAGE));
             this.pending = false;
@@ -146,6 +169,16 @@ export class SingleFileFS extends BaseFilesystem {
         this.sql.begin.run();
         this.pending = true;
     } }
+    mutate(operation, ...args) {
+        this.change();
+        if (this.deferNodeWrites) {
+            this.nodeWrites.push([operation, args]);
+            if (operation === 'trim')
+                this.trims.set(args[0], Math.min(this.trims.get(args[0]) ?? Infinity, args[1]));
+        }
+        else
+            return this.sql[operation].run(...args);
+    }
     key(ino, page) { return ino + ':' + page; }
     cachePage(key, data) {
         if (!this.cachePages)
@@ -161,6 +194,8 @@ export class SingleFileFS extends BaseFilesystem {
             this.counters.cacheHits++;
             return dirty.data;
         }
+        if (page >= (this.trims.get(ino) ?? Infinity))
+            return new Uint8Array(PAGE);
         if (cached) {
             this.counters.cacheHits++;
             this.cachePage(key, cached);
@@ -186,6 +221,22 @@ export class SingleFileFS extends BaseFilesystem {
             this.change();
         if (!this.pending)
             return;
+        if (this.deferNodeWrites && this.store.transaction)
+            this.store.transaction(() => this.writeChanges());
+        else
+            this.writeChanges();
+        this.pending = false;
+        this.counters.commits++;
+        for (const ino of this.dirtyNodes)
+            this.inodes.get(ino).persistedSize = this.inodes.get(ino).size;
+        this.dirty.clear();
+        this.dirtyNodes.clear();
+        this.nodeWrites.length = 0;
+        this.trims.clear();
+    }
+    writeChanges() {
+        for (const [operation, args] of this.nodeWrites)
+            this.sql[operation].run(...args);
         for (const { ino, page, data } of this.dirty.values()) {
             let end = data.length;
             while (end && data[end - 1] === 0)
@@ -208,12 +259,6 @@ export class SingleFileFS extends BaseFilesystem {
             this.counters.metadataUpdates++;
         }
         this.sql.commit.run();
-        this.pending = false;
-        this.counters.commits++;
-        for (const ino of this.dirtyNodes)
-            this.inodes.get(ino).persistedSize = this.inodes.get(ino).size;
-        this.dirty.clear();
-        this.dirtyNodes.clear();
     }
     syncToFs(relaxed = false) {
         // PGlite decides whether its query awaits this Promise. Keep it alive until
@@ -310,12 +355,20 @@ export class SingleFileFS extends BaseFilesystem {
     }
     lstat(p) { return this.stats(this.node(p)); }
     fstat(fd) { return this.stats(this.fd(fd)); }
-    chmod(p, mode) { const n = this.node(p); this.change(); n.mode = (n.mode & 0o170000) | (mode & 0o7777); this.sql.mode.run(n.mode, n.ino); }
-    utimes(p, atime, mtime) { const n = this.node(p); this.change(); n.mtime = mtime; this.sql.time.run(mtime, n.ino); }
+    chmod(p, mode) { const n = this.node(p); this.change(); n.mode = (n.mode & 0o170000) | (mode & 0o7777); this.mutate('mode', n.mode, n.ino); }
+    utimes(p, atime, mtime) { const n = this.node(p); this.change(); n.mtime = mtime; this.mutate('time', mtime, n.ino); }
     create(p, mode) {
-        this.change();
-        const result = this.sql.create.run(p, mode, Date.now());
-        const n = { ino: Number(result.lastInsertRowid), path: p, mode, size: 0, persistedSize: 0, mtime: Date.now() };
+        const mtime = Date.now();
+        let ino;
+        if (this.deferNodeWrites) {
+            if (!Number.isSafeInteger(this.nextIno))
+                throw new RangeError('Filesystem inode numbers exhausted');
+            ino = this.nextIno++;
+            this.mutate('create', ino, p, mode, mtime);
+        }
+        else
+            ino = Number(this.mutate('create', p, mode, mtime).lastInsertRowid);
+        const n = { ino, path: p, mode, size: 0, persistedSize: 0, mtime };
         this.nodes.set(p, n);
         this.inodes.set(n.ino, n);
         return n;
@@ -389,6 +442,8 @@ export class SingleFileFS extends BaseFilesystem {
             // PostgreSQL 18 issues multi-page reads. One range query replaces one
             // SQLite statement per 8 KiB page; dirty pages overlay persisted bytes.
             for (const row of this.sql.range.all(n.ino, first, last)) {
+                if (row.page >= (this.trims.get(n.ino) ?? Infinity))
+                    continue;
                 const begin = Math.max(position, row.page * PAGE), end = Math.min(position + length, row.page * PAGE + row.data.length);
                 if (end > begin)
                     target.set(row.data.subarray(begin - row.page * PAGE, end - row.page * PAGE), offset + begin - position);
@@ -440,8 +495,7 @@ export class SingleFileFS extends BaseFilesystem {
             throw new RangeError('length must be a non-negative integer');
         if (n.mode & 0o40000)
             fail('EISDIR', p);
-        this.change();
-        this.sql.trim.run(n.ino, Math.ceil(len / PAGE));
+        this.mutate('trim', n.ino, Math.ceil(len / PAGE));
         this.discard(n.ino, Math.ceil(len / PAGE));
         if (len < n.size && len % PAGE) {
             const page = Math.floor(len / PAGE), data = this.page(n.ino, page).slice();
@@ -467,15 +521,13 @@ export class SingleFileFS extends BaseFilesystem {
     }
     remove(n) {
         if ([...this.fds.values()].includes(n.ino)) {
-            this.change();
-            this.sql.rename.run(null, n.ino);
+            this.mutate('rename', null, n.ino);
             this.nodes.delete(n.path);
             n.path = null;
             return;
         }
-        this.change();
-        this.sql.trim.run(n.ino, 0);
-        this.sql.deleteNode.run(n.ino);
+        this.mutate('trim', n.ino, 0);
+        this.mutate('deleteNode', n.ino);
         this.discard(n.ino, 0);
         this.dirtyNodes.delete(n.ino);
         this.nodes.delete(n.path);
@@ -516,7 +568,7 @@ export class SingleFileFS extends BaseFilesystem {
         const moved = [n, ...[...this.nodes.values()].filter(c => c.path.startsWith(from + '/'))];
         for (const child of moved) {
             const newPath = to + child.path.slice(from.length);
-            this.sql.rename.run(newPath, child.ino);
+            this.mutate('rename', newPath, child.ino);
             this.nodes.delete(child.path);
             child.path = newPath;
             this.nodes.set(newPath, child);

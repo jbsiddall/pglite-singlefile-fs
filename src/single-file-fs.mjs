@@ -221,7 +221,7 @@ export class SingleFileFS extends BaseFilesystem {
             this.change();
         if (!this.pending)
             return;
-        if (this.store.transaction)
+        if (this.deferNodeWrites && this.store.transaction)
             this.store.transaction(() => this.writeChanges());
         else
             this.writeChanges();

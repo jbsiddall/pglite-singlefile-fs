@@ -60,7 +60,8 @@
     "seedSqliteSha256": "952e582a2114548e0c4ee98502690b8092b886f207e0fd4e66d43a07c070020d",
     "worker.mjsSha256": "5cb3dfe4cb6d8060efb9032dd4179e1b03daa6515a6318081350aca655e19b73",
     "ws-transport.mjsSha256": "34f331116c981bfd5a54b86b9579ca6966b59b8c269b71c78e14745fc79b0935",
-    "import-state.mjsSha256": "71d0af142228187276b6cc94a370fc0c475f0379b96dd4b24f7beeb13a535911"
+    "import-state.mjsSha256": "71d0af142228187276b6cc94a370fc0c475f0379b96dd4b24f7beeb13a535911",
+    "afterStorageCommit": "20423ad"
   },
   "method": {
     "order": [

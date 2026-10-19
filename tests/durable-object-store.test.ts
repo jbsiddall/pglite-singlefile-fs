@@ -1,5 +1,8 @@
 import { DatabaseSync } from 'node:sqlite';
 import { createHash } from 'node:crypto';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { PGlite } from '@electric-sql/pglite';
 // @ts-expect-error untyped fake
@@ -67,6 +70,26 @@ function read(fs: any, path: string, position: number, length: number) {
 }
 
 describe('Durable Object store', () => {
+  it('commits native SQLite writes without invoking Bun-shaped transaction factories', async () => {
+    const directory = mkdtempSync(join(tmpdir(), 'singlefile-native-transaction-'));
+    const filename = join(directory, 'database.db');
+    let fs = new SingleFileFS(filename);
+    let factoryCalls = 0;
+    fs.store.transaction = (callback: () => unknown) => { factoryCalls++; return callback; };
+    try {
+      fs.writeFile('/file', 'persisted');
+      await fs.syncToFs();
+      expect(fs.store.prepare('SELECT count(*) AS count FROM chunks').get().count).toBe(1);
+      await fs.closeFs();
+      fs = new SingleFileFS(filename);
+      expect(new TextDecoder().decode(read(fs, '/file', 0, 9))).toBe('persisted');
+      expect(factoryCalls).toBe(0);
+    } finally {
+      await fs.closeFs().catch(() => {});
+      rmSync(directory, { recursive: true, force: true });
+    }
+  });
+
   it('keeps node operations and chunks pending until one atomic flush', async () => {
     const { backing, open, snapshot } = harness();
     const fs = open();

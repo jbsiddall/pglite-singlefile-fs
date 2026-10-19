@@ -2,6 +2,16 @@
 
 This receipt records verified outcomes separately from configured automation. It does not replace raw reports or imply that every benchmark passed.
 
+## Durable Object branch: local validation, 2026-10-19
+
+On Linux x86-64 with Node 24.19.0, the branch passes all 28 tests, typechecking, release-policy checks, six Vitest benchmarks, the sampled native/filesystem benchmark, and a Wrangler 4.151.1 deployment dry run. Local workerd accepts authenticated PostgreSQL WebSockets from psql 17.11 through the Node bridge and Drizzle's `neon-serverless` adapter, including parameters, transactions, SQL-error recovery and rollback after disconnect. Unauthorized requests fail; an active socket excludes HTTP queries and a second socket. The persistent startup marker refuses imports after a workerd restart. Six process-restart checks cover cold SQL following rejected imports, authorization failures, unknown paths and wrong methods; unread bodies are drained to avoid the reproduced workerd forwarding error.
+
+The host-store filesystem now defers metadata with page changes. Regression tests establish unchanged persisted rows before flush, all-or-nothing rollback when the supplied transaction callback throws, truncate/extend read behavior, and retention of pending state on failure. Mutation checks independently show the rollback and trim tests fail when their protections are removed. WebSocket success bytes wait for the raw protocol call's persistence promise; a gated-flush regression catches the earlier acknowledgement bug.
+
+[The local comparison](benchmarks/cloudflare-do-local-atomicity.json) retains three complete HTTP benchmark runs per variant and conditions. Bulk insert measured 1.10× and bulk update 1.04× baseline medians; individual updates were unchanged in this run. These small local samples do not establish production costs.
+
+Real Cloudflare deployment was not attempted: neither `CLOUDFLARE_API_TOKEN` nor `CLOUDFLARE_ACCOUNT_ID` was configured. API access through the environment proxy was verified. The 128 MB production memory limit, remote cold starts, durable commit latency, complete PostgreSQL crash recovery and Neon comparison remain unverified. Runtime-loaded PL/pgSQL failed locally because workerd forbids compiling its `.so` WASM module. No newer hosted matrix result is implied by these local checks.
+
 ## Integration
 
 - [PR #2](https://github.com/jbsiddall/pglite-singlefile-fs/pull/2) merged into the default branch after the [final PR run](https://github.com/jbsiddall/pglite-singlefile-fs/actions/runs/37045613316).

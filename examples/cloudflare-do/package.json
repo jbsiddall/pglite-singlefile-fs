@@ -4,7 +4,16 @@
   "type": "module",
   "scripts": {
     "prepare-assets": "mkdir -p assets && cp ../../node_modules/@electric-sql/pglite/dist/pglite.wasm ../../node_modules/@electric-sql/pglite/dist/initdb.wasm ../../node_modules/@electric-sql/pglite/dist/pglite.data assets/ && node scripts/capture-trampolines.mjs",
-    "dev": "npm run prepare-assets && wrangler dev --local --persist-to .state"
+    "dev": "npm run prepare-assets && wrangler dev --local --persist-to .state",
+    "ws-bridge": "node scripts/ws-bridge.mjs",
+    "test:drizzle": "node scripts/drizzle-smoke.mjs"
   },
-  "devDependencies": { "wrangler": "^4.151.0" }
+  "devDependencies": {
+    "wrangler": "^4.151.0"
+  },
+  "dependencies": {
+    "@neondatabase/serverless": "1.2.0",
+    "drizzle-orm": "0.45.4",
+    "ws": "8.22.0"
+  }
 }

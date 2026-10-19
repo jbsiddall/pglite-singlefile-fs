@@ -3,3 +3,5 @@ assets
 .state
 .wrangler
 .seed.sqlite*
+.dev.vars
+.dev.vars.*

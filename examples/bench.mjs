@@ -1,8 +1,9 @@
 // usage: node bench.mjs http://localhost:PORT [label]
 const base = process.argv[2], label = process.argv[3] ?? base;
+const headers = process.env.WS_TOKEN ? { Authorization: `Bearer ${process.env.WS_TOKEN}` } : {};
 const sql = async text => {
     const t = performance.now();
-    const res = await fetch(`${base}/sql`, { method: 'POST', body: text });
+    const res = await fetch(`${base}/sql`, { method: 'POST', headers, body: text });
     const body = await res.json();
     if (body.error || !res.ok) throw new Error(`${text.slice(0, 60)} -> ${JSON.stringify(body).slice(0, 200)}`);
     return { ms: performance.now() - t, body };
@@ -22,4 +23,10 @@ await run('select_point_x200', Array.from({ length: 200 }, (_, i) => `select * f
 await run('select_scan_x5', Array.from({ length: 5 }, () => 'select count(*), sum(n), max(v) from bench'));
 await run('update_single_x100', Array.from({ length: 100 }, (_, i) => `update bench set n = n + 1 where id = ${1 + ((i * 193) % 20000)}`));
 await run('update_bulk_20000_rows', ['update bench set n = n + 1']);
+await run('metadata_create_truncate_drop_x20', Array.from({ length: 20 }, (_, i) => [
+    `create table bench_metadata_${i}(id integer, value text)`,
+    `insert into bench_metadata_${i} select g, md5(g::text) from generate_series(1,100) g`,
+    `truncate bench_metadata_${i}`,
+    `drop table bench_metadata_${i}`,
+]).flat());
 console.log(JSON.stringify({ label, results }, null, 2));

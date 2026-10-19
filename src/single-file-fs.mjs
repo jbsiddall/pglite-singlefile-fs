@@ -58,6 +58,7 @@ export class SingleFileFS extends BaseFilesystem {
         if (!Number.isSafeInteger(walAutoCheckpointBytes) || walAutoCheckpointBytes <= 0)
             throw new Error('walAutoCheckpointBytes must be positive');
         this.store = store ?? openDatabase(this.filename);
+        this.deferNodeWrites = !!store;
         try {
             if (store) {
                 // Host-managed SQLite (e.g. a Durable Object): the host owns durability,
@@ -109,7 +110,7 @@ export class SingleFileFS extends BaseFilesystem {
             this.sql = {
                 begin: prepare('BEGIN'),
                 commit: prepare('COMMIT'),
-                create: prepare('INSERT INTO nodes(path,mode,mtime) VALUES (?,?,?)'),
+                create: prepare(store ? 'INSERT INTO nodes(ino,path,mode,mtime) VALUES (?,?,?,?)' : 'INSERT INTO nodes(path,mode,mtime) VALUES (?,?,?)'),
                 size: prepare('UPDATE nodes SET size=?,mtime=? WHERE ino=?'),
                 mode: prepare('UPDATE nodes SET mode=? WHERE ino=?'),
                 time: prepare('UPDATE nodes SET mtime=? WHERE ino=?'),
@@ -125,16 +126,20 @@ export class SingleFileFS extends BaseFilesystem {
                 .map(mode => [mode, prepare('PRAGMA wal_checkpoint(' + mode + ')')]));
             this.nodes = new Map();
             this.inodes = new Map();
+            this.nextIno = 1;
             for (const n of this.store.prepare('SELECT * FROM nodes').all()) {
                 n.persistedSize = n.size;
                 this.nodes.set(n.path, n);
                 this.inodes.set(n.ino, n);
+                this.nextIno = Math.max(this.nextIno, n.ino + 1);
             }
             this.fds = new Map();
             this.fdFlags = new Map();
             this.nextFd = 1;
             this.dirty = new Map();
             this.dirtyNodes = new Set();
+            this.nodeWrites = [];
+            this.trims = new Map();
             this.cache = new Map();
             this.cachePages = Math.max(0, Math.floor(cacheBytes / PAGE));
             this.pending = false;
@@ -164,6 +169,16 @@ export class SingleFileFS extends BaseFilesystem {
         this.sql.begin.run();
         this.pending = true;
     } }
+    mutate(operation, ...args) {
+        this.change();
+        if (this.deferNodeWrites) {
+            this.nodeWrites.push([operation, args]);
+            if (operation === 'trim')
+                this.trims.set(args[0], Math.min(this.trims.get(args[0]) ?? Infinity, args[1]));
+        }
+        else
+            return this.sql[operation].run(...args);
+    }
     key(ino, page) { return ino + ':' + page; }
     cachePage(key, data) {
         if (!this.cachePages)
@@ -179,6 +194,8 @@ export class SingleFileFS extends BaseFilesystem {
             this.counters.cacheHits++;
             return dirty.data;
         }
+        if (page >= (this.trims.get(ino) ?? Infinity))
+            return new Uint8Array(PAGE);
         if (cached) {
             this.counters.cacheHits++;
             this.cachePage(key, cached);
@@ -199,14 +216,27 @@ export class SingleFileFS extends BaseFilesystem {
         this.cachePage(key, data);
     }
     commitChanges() {
-        return this.store.transaction ? this.store.transaction(() => this.writeChanges()) : this.writeChanges();
-    }
-    writeChanges() {
         this.check();
         if (this.dirty.size || this.dirtyNodes.size)
             this.change();
         if (!this.pending)
             return;
+        if (this.store.transaction)
+            this.store.transaction(() => this.writeChanges());
+        else
+            this.writeChanges();
+        this.pending = false;
+        this.counters.commits++;
+        for (const ino of this.dirtyNodes)
+            this.inodes.get(ino).persistedSize = this.inodes.get(ino).size;
+        this.dirty.clear();
+        this.dirtyNodes.clear();
+        this.nodeWrites.length = 0;
+        this.trims.clear();
+    }
+    writeChanges() {
+        for (const [operation, args] of this.nodeWrites)
+            this.sql[operation].run(...args);
         for (const { ino, page, data } of this.dirty.values()) {
             let end = data.length;
             while (end && data[end - 1] === 0)
@@ -229,12 +259,6 @@ export class SingleFileFS extends BaseFilesystem {
             this.counters.metadataUpdates++;
         }
         this.sql.commit.run();
-        this.pending = false;
-        this.counters.commits++;
-        for (const ino of this.dirtyNodes)
-            this.inodes.get(ino).persistedSize = this.inodes.get(ino).size;
-        this.dirty.clear();
-        this.dirtyNodes.clear();
     }
     syncToFs(relaxed = false) {
         // PGlite decides whether its query awaits this Promise. Keep it alive until
@@ -331,12 +355,20 @@ export class SingleFileFS extends BaseFilesystem {
     }
     lstat(p) { return this.stats(this.node(p)); }
     fstat(fd) { return this.stats(this.fd(fd)); }
-    chmod(p, mode) { const n = this.node(p); this.change(); n.mode = (n.mode & 0o170000) | (mode & 0o7777); this.sql.mode.run(n.mode, n.ino); }
-    utimes(p, atime, mtime) { const n = this.node(p); this.change(); n.mtime = mtime; this.sql.time.run(mtime, n.ino); }
+    chmod(p, mode) { const n = this.node(p); this.change(); n.mode = (n.mode & 0o170000) | (mode & 0o7777); this.mutate('mode', n.mode, n.ino); }
+    utimes(p, atime, mtime) { const n = this.node(p); this.change(); n.mtime = mtime; this.mutate('time', mtime, n.ino); }
     create(p, mode) {
-        this.change();
-        const result = this.sql.create.run(p, mode, Date.now());
-        const n = { ino: Number(result.lastInsertRowid), path: p, mode, size: 0, persistedSize: 0, mtime: Date.now() };
+        const mtime = Date.now();
+        let ino;
+        if (this.deferNodeWrites) {
+            if (!Number.isSafeInteger(this.nextIno))
+                throw new RangeError('Filesystem inode numbers exhausted');
+            ino = this.nextIno++;
+            this.mutate('create', ino, p, mode, mtime);
+        }
+        else
+            ino = Number(this.mutate('create', p, mode, mtime).lastInsertRowid);
+        const n = { ino, path: p, mode, size: 0, persistedSize: 0, mtime };
         this.nodes.set(p, n);
         this.inodes.set(n.ino, n);
         return n;
@@ -410,6 +442,8 @@ export class SingleFileFS extends BaseFilesystem {
             // PostgreSQL 18 issues multi-page reads. One range query replaces one
             // SQLite statement per 8 KiB page; dirty pages overlay persisted bytes.
             for (const row of this.sql.range.all(n.ino, first, last)) {
+                if (row.page >= (this.trims.get(n.ino) ?? Infinity))
+                    continue;
                 const begin = Math.max(position, row.page * PAGE), end = Math.min(position + length, row.page * PAGE + row.data.length);
                 if (end > begin)
                     target.set(row.data.subarray(begin - row.page * PAGE, end - row.page * PAGE), offset + begin - position);
@@ -461,8 +495,7 @@ export class SingleFileFS extends BaseFilesystem {
             throw new RangeError('length must be a non-negative integer');
         if (n.mode & 0o40000)
             fail('EISDIR', p);
-        this.change();
-        this.sql.trim.run(n.ino, Math.ceil(len / PAGE));
+        this.mutate('trim', n.ino, Math.ceil(len / PAGE));
         this.discard(n.ino, Math.ceil(len / PAGE));
         if (len < n.size && len % PAGE) {
             const page = Math.floor(len / PAGE), data = this.page(n.ino, page).slice();
@@ -488,15 +521,13 @@ export class SingleFileFS extends BaseFilesystem {
     }
     remove(n) {
         if ([...this.fds.values()].includes(n.ino)) {
-            this.change();
-            this.sql.rename.run(null, n.ino);
+            this.mutate('rename', null, n.ino);
             this.nodes.delete(n.path);
             n.path = null;
             return;
         }
-        this.change();
-        this.sql.trim.run(n.ino, 0);
-        this.sql.deleteNode.run(n.ino);
+        this.mutate('trim', n.ino, 0);
+        this.mutate('deleteNode', n.ino);
         this.discard(n.ino, 0);
         this.dirtyNodes.delete(n.ino);
         this.nodes.delete(n.path);
@@ -537,7 +568,7 @@ export class SingleFileFS extends BaseFilesystem {
         const moved = [n, ...[...this.nodes.values()].filter(c => c.path.startsWith(from + '/'))];
         for (const child of moved) {
             const newPath = to + child.path.slice(from.length);
-            this.sql.rename.run(newPath, child.ino);
+            this.mutate('rename', newPath, child.ino);
             this.nodes.delete(child.path);
             child.path = newPath;
             this.nodes.set(newPath, child);

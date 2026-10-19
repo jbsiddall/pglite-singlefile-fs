@@ -22,6 +22,8 @@ Appending `shared_buffers=16MB`, `work_mem=1MB`, `maintenance_work_mem=16MB`, an
 
 Production WSS checks also passed: psql through the Node bridge verified explicit and disconnect rollback; Drizzle’s `neon-serverless` adapter verified parameters, transactions and SQL-error recovery. After deploying the clean source bundle, a query confirmed all 20,100 benchmark rows remained and `pg_settings` confirmed the reduced budgets. This is persistence across a deployment, not a simulated power-loss test. The temporary Access application, service token and upload staging namespaces were deleted; the account-wide deny policy remains enabled.
 
+Prisma Client 7.10.1 subsequently passed the generated TypeScript smoke on Node against both local workerd and real Cloudflare, with both the direct Neon-adapter WebSocket path and the PostgreSQL adapter through the bridge. [The receipt](benchmarks/cloudflare-do-prisma.json) retains those four runs and the corrected runtime/assets dependency mismatch. These checks do not certify Prisma Migrate or Prisma running inside a Worker. [Capacity controls and external provider comparisons](CLOUDFLARE-COMPARISON.md) distinguish documented quotas from tested capacity and keep vendor/user reports separate from a controlled head-to-head benchmark.
+
 Isolated cold starts and commit latency, complete PostgreSQL crash recovery and Neon comparison remain unverified. Runtime-loaded PL/pgSQL failed locally because workerd forbids compiling its `.so` WASM module.
 
 ## Integration

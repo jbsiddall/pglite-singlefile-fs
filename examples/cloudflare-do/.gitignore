@@ -5,3 +5,4 @@ assets
 .seed.sqlite*
 .dev.vars
 .dev.vars.*
+generated/

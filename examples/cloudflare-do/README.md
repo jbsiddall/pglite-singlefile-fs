@@ -60,8 +60,30 @@ The script uses Drizzle's `neon-serverless` adapter, an authenticated Node `ws` 
 
 Browser WebSocket constructors cannot supply an Authorization header. This example supports Node clients; keep the bearer token in a trusted server or local bridge.
 
+### Prisma Client (Node / TypeScript)
+
+Prisma 7.10.1 is verified against both local workerd and the deployed Cloudflare database. Generate the example client and typecheck it, then run the direct WebSocket smoke test:
+
+```sh
+npm run prisma:generate
+npm run check:prisma
+node --env-file=.dev.vars --import=tsx scripts/prisma-smoke.ts --ws http://localhost:8799
+```
+
+Pass `https://<worker>.workers.dev` to test a deployment. The script uses `@prisma/adapter-neon`, authenticated `ws`, and `neonConfig.wsProxy` pointed at `/ws`; it does not connect to a Neon database. Its pool is limited to one connection, and PostgreSQL SSL, password pipelining and HTTP query fallback are disabled. WSS encrypts the deployed connection.
+
+`@prisma/adapter-pg` also works through the existing local bridge. Start the bridge as shown above, then run `npm run test:prisma` in another terminal; set `PGPORT` in both terminals if changing the port. Close other database clients before either test.
+
+[The recorded checks](../../docs/benchmarks/cloudflare-do-prisma.json) cover generated TypeScript create/read/update/delete, parameter binding, transaction commit and rollback, unique-error recovery and reconnect persistence. The script creates and removes a `prisma_smoke` table; run it only on a disposable test database. Prisma runs in Node in these checks. Prisma Migrate, introspection, `db push`, browser clients and running Prisma itself inside a Worker remain unverified.
+
+The example pins PGlite 0.5.8 explicitly. Prisma's CLI also depends on an older PGlite; allowing it to supply the Worker's import caused a reproduced runtime/assets version mismatch. Keep the runtime and prepared assets on the same version.
+
+
 ## Limits
 
 A real Cloudflare deployment started, completed the HTTP benchmark, and passed psql/Drizzle WebSocket smoke checks with this example's settings: `shared_buffers=16MB`, `work_mem=1MB`, `maintenance_work_mem=16MB`, and `max_connections=10`, appended to PGlite's default startup parameters. Default PGlite settings failed startup with HTTP 400 and `RangeError: Invalid typed array length: 197722112`. [Recorded results](../../docs/benchmarks/cloudflare-do-production.json) cover these workloads and persistence across a clean redeployment. This does not guarantee that arbitrary queries fit Cloudflare's 128 MB memory limit. Local workerd results do not establish production memory usage, cold-start timings, or durable commit latency.
 
 With a supplied store, filesystem metadata and chunks now flush together. This example supplies `ctx.storage.transactionSync`, so a throwing flush rolls back the entire batch; omitting that callback does not provide exception rollback. Tests cover interruption before flush, rollback on failure, and reads after truncate/extend. These checks do not prove recovery from every PostgreSQL crash scenario. No multi-connection PostgreSQL server behavior is promised.
+
+
+The backing SQLite database has a documented 10 GB per-object limit on Workers Paid, including its storage overhead. This is not a tested PostgreSQL payload capacity. Cloudflare's Free-plan documentation currently conflicts; [the capacity and provider comparison](../../docs/CLOUDFLARE-COMPARISON.md) explains the conservative limits, native large-database evidence and remaining production uncertainties.

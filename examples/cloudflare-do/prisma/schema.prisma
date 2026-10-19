@@ -1,0 +1,18 @@
+generator client {
+  provider = "prisma-client"
+  output = "../generated/prisma"
+  moduleFormat = "esm"
+  importFileExtension = "ts"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model PrismaSmoke {
+  id Int @id @default(autoincrement())
+  name String @unique
+  value String
+
+  @@map("prisma_smoke")
+}

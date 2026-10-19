@@ -1,0 +1,71 @@
+{
+  "testedAt": "2026-10-19T12:40:27.751523+00:00",
+  "runtime": "Node.js 24.19.0 client; PGlite 0.5.8 PostgreSQL 18.3 in Cloudflare Durable Object",
+  "versions": {
+    "prisma": "7.10.1",
+    "@prisma/client": "7.10.1",
+    "@prisma/adapter-pg": "7.10.1",
+    "@prisma/adapter-neon": "7.10.1",
+    "pg": "8.23.1",
+    "@neondatabase/serverless": "1.2.0",
+    "tsx": "4.23.15"
+  },
+  "checks": [
+    "generated TypeScript ORM create/find/update/delete",
+    "quoted injection-like literal persisted as a parameter",
+    "interactive transaction commit",
+    "intentional transaction rollback with zero matching rows",
+    "unique violation P2002 then successful query",
+    "disconnect/reconnect retains committed row count",
+    "smoke table dropped"
+  ],
+  "runs": [
+    {
+      "target": "local workerd",
+      "transport": "PrismaPg -> loopback TCP bridge -> authenticated WS -> Durable Object",
+      "exitCode": 0
+    },
+    {
+      "target": "deployed Cloudflare Worker",
+      "transport": "PrismaPg -> loopback TCP bridge -> authenticated WSS through HTTPS proxy -> Durable Object",
+      "exitCode": 0
+    },
+    {
+      "target": "local workerd",
+      "transport": "PrismaNeon -> authenticated direct WS -> Durable Object",
+      "exitCode": 0
+    },
+    {
+      "target": "deployed Cloudflare Worker",
+      "transport": "PrismaNeon -> authenticated direct WSS through HTTPS proxy -> Durable Object",
+      "exitCode": 0
+    }
+  ],
+  "generation": "prisma generate --schema prisma/schema.prisma passed",
+  "typecheck": "npm run check:prisma passed with strict TypeScript; generated client included",
+  "dependencyIsolation": {
+    "observedBeforePin": "Prisma CLI dependencies introduced example-local PGlite 0.4.3 while root Worker assets remained 0.5.8. Fresh Node seeding failed with ErrnoError errno20; importing an existing seed then starting local Worker failed with Invalid FS bundle size: 6295316 !== 5289109.",
+    "change": "Pinned example runtime dependency @electric-sql/pglite to 0.5.8; regenerated Worker assets and used fresh local Durable Object state.",
+    "observedAfterPin": "Fresh Node initdb seed uploaded998nodes and3712chunks; both Prisma adapters passed against the local Worker.",
+    "limit": "This establishes a dependency version mismatch and successful correction; it does not isolate every internal cause of the initial errno20 failure."
+  },
+  "poolSettings": {
+    "max": 1,
+    "pipelineConnect": false,
+    "poolQueryViaFetch": false,
+    "PostgreSQLSSL": false
+  },
+  "limits": [
+    "Prisma runs in Node; Prisma execution inside a Worker was not tested",
+    "Prisma Migrate, db push, introspection and unsupported schema features were not tested",
+    "These checks do not measure throughput, concurrency, maximum memory or PostgreSQL crash recovery"
+  ],
+  "cleanup": {
+    "smokeTablesDropped": true,
+    "ownedBridgeAndLocalWorkerdProcessesStopped": 3,
+    "temporaryAccessApplicationDeleted": true,
+    "temporaryServiceTokenDeleted": true,
+    "accountDenyUnmatchedRequests": true,
+    "postCleanupPublicHttpStatus": 403
+  }
+}

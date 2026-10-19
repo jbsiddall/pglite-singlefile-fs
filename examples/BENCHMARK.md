@@ -66,3 +66,5 @@ One suite from the managed environment through its proxy and Cloudflare Access, 
 | Create/insert/truncate/drop mix | 80 | 68.68 | 84.76 |
 
 These client timings include proxy, network and authentication overhead and do not isolate commit latency. This single suite does not establish a memory safety margin or performance distribution for other clients. Bulk p95 values repeat their sole sample. No Neon comparison was run.
+
+[The provider comparison](../docs/CLOUDFLARE-COMPARISON.md) checks Neon/Supabase marketing, published experiments and firsthand reports against this suite. No controlled relative performance claim is established.

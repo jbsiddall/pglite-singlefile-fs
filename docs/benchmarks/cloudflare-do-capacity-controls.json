@@ -1,0 +1,70 @@
+{
+  "timestamp": "2026-10-19T12:40:21.862Z",
+  "commit": "79ca34b3a50ba73d1663bb03651283a0b88eb541",
+  "runtime": "v24.19.0",
+  "pgliteVersion": "0.5.8",
+  "limitations": [
+    "Sparse one-byte offset controls, not a PostgreSQL database capacity test.",
+    "Fake Durable Object SQL runs on local node:sqlite; no Cloudflare storage or memory enforcement.",
+    "WASM control disables initdb and exercises exported C pread/pwrite only."
+  ],
+  "controls": [
+    {
+      "kind": "native-singlefile",
+      "positions": [
+        2147483665,
+        4294967313,
+        10000000017,
+        1099511627793,
+        9007199254740990
+      ],
+      "logicalFileBytes": 9007199254740991,
+      "stored": {
+        "chunks": 5,
+        "blobBytes": 9287
+      },
+      "configuration": {
+        "sqliteVersion": "3.53.3",
+        "pageSize": 8192,
+        "maxPageCount": 4294967294
+      },
+      "containerBytes": 49152,
+      "unsafeEndRejected": true,
+      "reopened": true
+    },
+    {
+      "kind": "fake-do-singlefile",
+      "positions": [
+        2147483665,
+        4294967313,
+        10000000017,
+        1099511627793,
+        9007199254740990
+      ],
+      "logicalFileBytes": 9007199254740991,
+      "stored": {
+        "chunks": 5,
+        "blobBytes": 9287
+      },
+      "configuration": null,
+      "containerBytes": null,
+      "unsafeEndRejected": true,
+      "reopened": true
+    },
+    {
+      "kind": "pglite-wasm-pwrite-pread-fake-do",
+      "positions": [
+        2147483665,
+        4294967313,
+        10000000017,
+        1099511627793
+      ],
+      "wasmHeapBytes": 134217728,
+      "logicalFileBytes": 1099511627794,
+      "stored": {
+        "chunks": 4,
+        "blobBytes": 1096
+      }
+    }
+  ]
+}

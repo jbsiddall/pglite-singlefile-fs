@@ -7,7 +7,16 @@ export interface WalCheckpointResult {
     log: number;
     checkpointed: number;
 }
+/** `ctx.storage.sql` from a SQLite-backed Cloudflare Durable Object. */
+export interface DurableObjectSql {
+    exec(query: string, ...bindings: unknown[]): { toArray(): any[]; one(): any } & Iterable<any>;
+}
+export class DurableObjectStore {
+    constructor(sql: DurableObjectSql);
+}
 export interface SingleFileFSOptions {
+    /** Host-managed SQLite, e.g. `new DurableObjectStore(ctx.storage.sql)`. The host owns durability; PRAGMA-related options are ignored. */
+    store?: DurableObjectStore;
     /** Default true. False disables crash durability and uses MEMORY journaling by default. */
     durable?: boolean;
     /** Optional clean chunk cache in bytes; disabled by default. Not a total memory cap. */

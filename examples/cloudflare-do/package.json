@@ -1,0 +1,10 @@
+{
+  "name": "pglite-do-example",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "prepare-assets": "mkdir -p assets && cp ../../node_modules/@electric-sql/pglite/dist/pglite.wasm ../../node_modules/@electric-sql/pglite/dist/initdb.wasm ../../node_modules/@electric-sql/pglite/dist/pglite.data assets/ && node scripts/capture-trampolines.mjs",
+    "dev": "npm run prepare-assets && wrangler dev --local --persist-to .state"
+  },
+  "devDependencies": { "wrangler": "^4.151.0" }
+}

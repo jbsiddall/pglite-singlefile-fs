@@ -5,6 +5,13 @@ import { Buffer } from 'node:buffer';
 import { setImmediate } from 'node:timers';
 import { BaseFilesystem, ERRNO_CODES } from '@electric-sql/pglite/basefs';
 const PAGE = 8192;
+const SCHEMA = [
+    'CREATE TABLE IF NOT EXISTS nodes (ino INTEGER PRIMARY KEY, path TEXT UNIQUE, mode INTEGER NOT NULL, size INTEGER NOT NULL DEFAULT 0, mtime INTEGER NOT NULL)',
+    'CREATE TABLE IF NOT EXISTS chunks (ino INTEGER NOT NULL, page INTEGER NOT NULL, data BLOB NOT NULL, PRIMARY KEY (ino,page))',
+    "INSERT OR IGNORE INTO nodes(path,mode,mtime) VALUES ('/',16832,0)",
+    'DELETE FROM chunks WHERE ino IN (SELECT ino FROM nodes WHERE path IS NULL)',
+    'DELETE FROM nodes WHERE path IS NULL',
+];
 const bytes = value => {
     if (value instanceof ArrayBuffer || (typeof SharedArrayBuffer !== 'undefined' && value instanceof SharedArrayBuffer))
         return new Uint8Array(value);
@@ -25,7 +32,7 @@ const validateIo = (buffer, offset, length, position) => {
 // PostgreSQL remains the SQL engine. SQLite stores opaque file bytes. Missing
 // chunks and omitted zero suffixes read as zeros; no PostgreSQL parsing needed.
 export class SingleFileFS extends BaseFilesystem {
-    constructor(filename, { durable = true, cacheBytes = 0, journalMode, pageSize, chunkTable, lockingMode = 'NORMAL', sqliteCacheKiB = 2000, walAutoCheckpointBytes = 32 * 1024 * 1024 } = {}) {
+    constructor(filename, { store, durable = true, cacheBytes = 0, journalMode, pageSize, chunkTable, lockingMode = 'NORMAL', sqliteCacheKiB = 2000, walAutoCheckpointBytes = 32 * 1024 * 1024 } = {}) {
         super();
         if (typeof filename !== 'string' || !filename.length)
             throw new TypeError('filename must be a non-empty string');
@@ -50,43 +57,54 @@ export class SingleFileFS extends BaseFilesystem {
             throw new Error('sqliteCacheKiB must be positive');
         if (!Number.isSafeInteger(walAutoCheckpointBytes) || walAutoCheckpointBytes <= 0)
             throw new Error('walAutoCheckpointBytes must be positive');
-        this.store = openDatabase(this.filename);
+        this.store = store ?? openDatabase(this.filename);
         try {
-            assertContainerFormat(this.store);
-            // Page size and layout are creation choices. Never silently rebuild an
-            // existing image when requested options disagree with its persisted format.
-            const schema = this.store.prepare("SELECT sql FROM sqlite_schema WHERE name='chunks'").get();
-            const requestedPageSize = pageSize ?? (schema ? undefined : 8192);
-            if (requestedPageSize !== undefined)
-                this.store.exec('PRAGMA page_size=' + requestedPageSize);
-            this.pageSize = this.store.prepare('PRAGMA page_size').get().page_size;
-            if (pageSize !== undefined && this.pageSize !== pageSize)
-                throw new Error('Existing image has a different pageSize');
-            this.chunkTable = schema ? (/WITHOUT\s+ROWID/i.test(schema.sql) ? 'without-rowid' : 'rowid') : (chunkTable ?? 'rowid');
-            if (schema && chunkTable !== undefined && this.chunkTable !== chunkTable)
-                throw new Error('Existing image has a different chunkTable layout');
-            // WAL+FULL retains SQLite protection independently of PostgreSQL WAL.
-            // DELETE+EXTRA remains selectable; explicit fast mode is NOT crash-safe.
-            this.store.exec(`PRAGMA locking_mode=${lockingMode}; PRAGMA mmap_size=0; PRAGMA journal_mode=${journalMode};
-      PRAGMA synchronous=${durable ? (journalMode === 'WAL' ? 'FULL' : 'EXTRA') : 'OFF'}; PRAGMA temp_store=MEMORY;
-      CREATE TABLE IF NOT EXISTS nodes (
-        ino INTEGER PRIMARY KEY, path TEXT UNIQUE, mode INTEGER NOT NULL,
-        size INTEGER NOT NULL DEFAULT 0, mtime INTEGER NOT NULL);
-      CREATE TABLE IF NOT EXISTS chunks (
-        ino INTEGER NOT NULL, page INTEGER NOT NULL, data BLOB NOT NULL,
-        PRIMARY KEY (ino,page)) ${this.chunkTable === 'without-rowid' ? 'WITHOUT ROWID' : ''};
-      INSERT OR IGNORE INTO nodes(path,mode,mtime) VALUES ('/',16832,0);
-      DELETE FROM chunks WHERE ino IN (SELECT ino FROM nodes WHERE path IS NULL);
-      DELETE FROM nodes WHERE path IS NULL;`);
-            this.journalMode = this.store.prepare('PRAGMA journal_mode').get().journal_mode;
-            if (durable && this.journalMode !== journalMode.toLowerCase())
-                throw new Error('Storage could not enable the requested durable journal mode');
-            markContainerFormat(this.store);
-            this.closeWithDeleteJournal = this.journalMode === 'wal' && disablePersistentWal(this.store);
-            if (sqliteCacheKiB !== undefined)
-                this.store.exec('PRAGMA cache_size=-' + sqliteCacheKiB);
-            if (this.journalMode === 'wal')
-                this.store.exec('PRAGMA wal_autocheckpoint=' + Math.max(1, Math.floor(walAutoCheckpointBytes / this.pageSize)));
+            if (store) {
+                // Host-managed SQLite (e.g. a Durable Object): the host owns durability,
+                // journaling and the file format, so none of the PRAGMA/format steps apply.
+                this.pageSize = PAGE;
+                this.chunkTable = chunkTable ?? 'rowid';
+                this.journalMode = 'external';
+                this.closeWithDeleteJournal = false;
+                for (const statement of SCHEMA) this.store.exec(statement);
+            }
+            else {
+                assertContainerFormat(this.store);
+                // Page size and layout are creation choices. Never silently rebuild an
+                // existing image when requested options disagree with its persisted format.
+                const schema = this.store.prepare("SELECT sql FROM sqlite_schema WHERE name='chunks'").get();
+                const requestedPageSize = pageSize ?? (schema ? undefined : 8192);
+                if (requestedPageSize !== undefined)
+                    this.store.exec('PRAGMA page_size=' + requestedPageSize);
+                this.pageSize = this.store.prepare('PRAGMA page_size').get().page_size;
+                if (pageSize !== undefined && this.pageSize !== pageSize)
+                    throw new Error('Existing image has a different pageSize');
+                this.chunkTable = schema ? (/WITHOUT\s+ROWID/i.test(schema.sql) ? 'without-rowid' : 'rowid') : (chunkTable ?? 'rowid');
+                if (schema && chunkTable !== undefined && this.chunkTable !== chunkTable)
+                    throw new Error('Existing image has a different chunkTable layout');
+                // WAL+FULL retains SQLite protection independently of PostgreSQL WAL.
+                // DELETE+EXTRA remains selectable; explicit fast mode is NOT crash-safe.
+                this.store.exec(`PRAGMA locking_mode=${lockingMode}; PRAGMA mmap_size=0; PRAGMA journal_mode=${journalMode};
+          PRAGMA synchronous=${durable ? (journalMode === 'WAL' ? 'FULL' : 'EXTRA') : 'OFF'}; PRAGMA temp_store=MEMORY;
+          CREATE TABLE IF NOT EXISTS nodes (
+            ino INTEGER PRIMARY KEY, path TEXT UNIQUE, mode INTEGER NOT NULL,
+            size INTEGER NOT NULL DEFAULT 0, mtime INTEGER NOT NULL);
+          CREATE TABLE IF NOT EXISTS chunks (
+            ino INTEGER NOT NULL, page INTEGER NOT NULL, data BLOB NOT NULL,
+            PRIMARY KEY (ino,page)) ${this.chunkTable === 'without-rowid' ? 'WITHOUT ROWID' : ''};
+          INSERT OR IGNORE INTO nodes(path,mode,mtime) VALUES ('/',16832,0);
+          DELETE FROM chunks WHERE ino IN (SELECT ino FROM nodes WHERE path IS NULL);
+          DELETE FROM nodes WHERE path IS NULL;`);
+                this.journalMode = this.store.prepare('PRAGMA journal_mode').get().journal_mode;
+                if (durable && this.journalMode !== journalMode.toLowerCase())
+                    throw new Error('Storage could not enable the requested durable journal mode');
+                markContainerFormat(this.store);
+                this.closeWithDeleteJournal = this.journalMode === 'wal' && disablePersistentWal(this.store);
+                if (sqliteCacheKiB !== undefined)
+                    this.store.exec('PRAGMA cache_size=-' + sqliteCacheKiB);
+                if (this.journalMode === 'wal')
+                    this.store.exec('PRAGMA wal_autocheckpoint=' + Math.max(1, Math.floor(walAutoCheckpointBytes / this.pageSize)));
+            }
             const prepare = sql => this.store.prepare(sql);
             this.sql = {
                 begin: prepare('BEGIN'),

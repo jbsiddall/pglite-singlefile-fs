@@ -16,7 +16,8 @@ const row = r => {
 
 export class DurableObjectStore {
     /** @param sql `ctx.storage.sql` from a SQLite-backed Durable Object */
-    constructor(sql) { this.sql = sql; }
+    /** @param transactionSync `ctx.storage.transactionSync`, so a failed commit rolls back as a whole */
+    constructor(sql, transactionSync) { this.sql = sql; if (transactionSync) this.transaction = transactionSync; }
     exec(text) { this.sql.exec(text).toArray(); }
     close() {}
     prepare(text) {

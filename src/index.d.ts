@@ -12,7 +12,7 @@ export interface DurableObjectSql {
     exec(query: string, ...bindings: unknown[]): { toArray(): any[]; one(): any } & Iterable<any>;
 }
 export class DurableObjectStore {
-    constructor(sql: DurableObjectSql);
+    constructor(sql: DurableObjectSql, transactionSync?: <T>(callback: () => T) => T);
 }
 export interface SingleFileFSOptions {
     /** Host-managed SQLite, e.g. `new DurableObjectStore(ctx.storage.sql)`. The host owns durability; PRAGMA-related options are ignored. */

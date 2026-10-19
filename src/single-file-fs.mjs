@@ -199,6 +199,9 @@ export class SingleFileFS extends BaseFilesystem {
         this.cachePage(key, data);
     }
     commitChanges() {
+        return this.store.transaction ? this.store.transaction(() => this.writeChanges()) : this.writeChanges();
+    }
+    writeChanges() {
         this.check();
         if (this.dirty.size || this.dirtyNodes.size)
             this.change();

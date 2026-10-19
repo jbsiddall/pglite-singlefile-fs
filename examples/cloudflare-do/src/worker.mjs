@@ -35,7 +35,7 @@ function counting(sql, totals) {
 
 export class Db extends DurableObject {
     totals = { read: 0, written: 0 };
-    sql = new DurableObjectStore(counting(this.ctx.storage.sql, this.totals));
+    sql = new DurableObjectStore(counting(this.ctx.storage.sql, this.totals), fn => this.ctx.storage.transactionSync(fn));
 
     // Postgres's initdb loads .so side modules, which Workers cannot compile, so the cluster is seeded from Node instead.
     start() {

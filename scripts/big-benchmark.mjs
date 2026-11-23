@@ -53,8 +53,8 @@ for(const backend of (process.env.BIG_BENCH_CHILD?[process.env.BIG_BENCH_CHILD]:
   const root=mkdtempSync(join(process.env.BIG_BENCH_TMPDIR??tmpdir(),'pglite-large-'));
   let db,fs;
   try {
-    fs=backend==='singlefile'?new SingleFileFS(join(root,'database.pglite'),{durable:true,redbCacheBytes:2*1024*1024,cacheBytes:0,pageSize:8192}):null;
-    const startParams=[...PGlite.defaultStartParams,'-c',`shared_buffers=${fs?98:100}MB`,'-c','work_mem=32MB'];
+    fs=backend==='singlefile'?new SingleFileFS(join(root,'database.pglite'),{durable:true,redbCacheBytes:8*1024*1024,cacheBytes:0,pageSize:8192}):null;
+    const startParams=[...PGlite.defaultStartParams,'-c',`shared_buffers=${fs?92:100}MB`,'-c','work_mem=32MB'];
     db=fs?await PGlite.create({fs,startParams}):await PGlite.create(join(root,'pgdata'),{startParams});
     environments[backend]={runtime,runtimeFlags:process.env.JSC_useWasmOSR===undefined?{}:{JSC_useWasmOSR:process.env.JSC_useWasmOSR},platform:process.platform,arch:process.arch,cpu:cpus()[0]?.model,settings:(await db.query("SELECT name,setting FROM pg_settings WHERE name IN ('fsync','shared_buffers','work_mem') ORDER BY name")).rows};
     // Exactly two application tables. Random payload resists PostgreSQL TOAST compression.

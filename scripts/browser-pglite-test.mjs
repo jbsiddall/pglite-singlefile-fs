@@ -98,7 +98,7 @@ async function runBench(label, setupFn, cleanupFn) {
 
 async function phase1() {
   // 1. Persistence + transaction + rollback test on single-file OPFS redb
-  const sfs = await SingleFileFS.open('pgvault.pglite', { redbCacheBytes: 2 * 1024 * 1024 });
+  const sfs = await SingleFileFS.open('pgvault.pglite');
   const db = await PGlite.create({ fs: sfs });
   await db.exec('CREATE TABLE notes(id INT PRIMARY KEY, body TEXT NOT NULL)');
   await db.query("INSERT INTO notes VALUES (1, 'hello-browser-opfs')");
@@ -142,17 +142,16 @@ async function phase1() {
   ));
 
   for (const [label, opts, relaxed] of [
-    ['redb bitsparse16 (strict)', { compression: 'bitsparse16', durable: true }, false],
-    ['redb bitsparse16 (relaxed)', { compression: 'bitsparse16', durable: true }, true],
-    ['redb bitsparse16 (no-flush)', { compression: 'bitsparse16', durable: false }, false],
-    ['redb zerobytemask (no-flush)', { compression: 'zerobytemask', durable: false }, false],
-    ['redb lz4 (no-flush)', { compression: 'lz4', durable: false }, false],
+    ['SingleFileFS sparse (strict)', { compression: 'sparse', durable: true }, false],
+    ['SingleFileFS sparse (relaxed)', { compression: 'sparse', durable: true }, true],
+    ['SingleFileFS sparse (no-flush)', { compression: 'sparse', durable: false }, false],
+    ['SingleFileFS lz4 (relaxed)', { compression: 'lz4', durable: true }, true],
   ]) {
     const fname = 'bench-' + label.replace(/[^a-z0-9]+/gi, '-') + '.pglite';
     benchRows.push(await runBench(
       label,
       async () => {
-        const bFs = await SingleFileFS.open(fname, { redbCacheBytes: 2 * 1024 * 1024, ...opts });
+        const bFs = await SingleFileFS.open(fname, opts);
         const bDb = await PGlite.create({ fs: bFs, relaxedDurability: relaxed });
         return { db: bDb, settle: () => bFs.flush(), statsEntry: { name: fname, kind: 'file' } };
       },
@@ -164,7 +163,7 @@ async function phase1() {
 }
 
 async function phase2() {
-  const sfs = await SingleFileFS.open('pgvault.pglite', { redbCacheBytes: 2 * 1024 * 1024 });
+  const sfs = await SingleFileFS.open('pgvault.pglite');
   const db = await PGlite.create({ fs: sfs });
   const before = (await db.query('SELECT * FROM notes ORDER BY id')).rows;
   await db.query("INSERT INTO notes VALUES (3, 'after-chrome-restart')");
@@ -287,15 +286,15 @@ async function main() {
     }
 
     const safePath = path.normalize(reqUrl.pathname).replace(/^(\.\.[/\\])+/, '');
-    const absPath = path.join(repoRoot, safePath);
-    if (!fs.existsSync(absPath) || fs.statSync(absPath).isDirectory()) {
+    const absPath = path.resolve(repoRoot, safePath.replace(/^[/\\]+/, ''));
+    if (!absPath.startsWith(repoRoot) || !fs.existsSync(absPath) || fs.statSync(absPath).isDirectory()) {
       res.writeHead(404);
       res.end('Not found');
       return;
     }
     const ext = path.extname(absPath);
     res.writeHead(200, { 'content-type': MIME[ext] || 'application/octet-stream' });
-    if (ext === '.mjs' || (ext === '.js' && safePath.startsWith('src/'))) {
+    if (ext === '.mjs') {
       res.end(rewriteBareImports(fs.readFileSync(absPath, 'utf8')));
     } else {
       fs.createReadStream(absPath).pipe(res);

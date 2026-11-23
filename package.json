@@ -26,7 +26,10 @@
     "LICENSE",
     "README.md"
   ],
-  "sideEffects": false,
+  "sideEffects": [
+    "./src/index.mjs",
+    "./src/browser.mjs"
+  ],
   "engines": {
     "node": ">=18.0.0"
   },
@@ -42,6 +45,10 @@
     "postgresql",
     "single-file",
     "virtual-filesystem",
+    "redb",
+    "wasm",
+    "browser",
+    "opfs",
     "nodejs",
     "bun",
     "deno",
@@ -58,7 +65,7 @@
     "bench:big": "node scripts/big-benchmark.mjs && node scripts/benchmark-report.mjs reports/benchmark-large-results.json reports/benchmark-large-report.html"
   },
   "dependencies": {
-    "redb-js": "git+https://github.com/jbsiddall/redb-js.git"
+    "redb-js": "github:jbsiddall/redb-js"
   },
   "peerDependencies": {
     "@electric-sql/pglite": "^0.5.8"

@@ -5,6 +5,7 @@ export const CONTAINER_MAGIC = 'PGSF';
 export const FORMAT_VERSION = 3;
 
 const ALLOWED_TABLES = new Set(['meta', 'nodes', 'chunks']);
+const OVERLAY_PAGE_SIZE = 4096;
 
 export function hasRedbMagic(bytes) {
   if (!bytes || bytes.byteLength < REDB_MAGIC.length) return false;
@@ -32,6 +33,94 @@ export function wrapReadOnlyNonClosing(backend) {
     },
     setLen() {
       throw new Error('Resize attempted during read-only container inspection');
+    },
+    sync() {},
+    close() {},
+  };
+}
+
+/**
+ * Create a non-closing, in-memory Copy-on-Write overlay over a StorageBackend.
+ * Used when an existing redb image requires crash repair before inspection so
+ * foreign redb files are validated purely in RAM and NEVER mutated on disk/OPFS.
+ */
+export function wrapInMemoryRepairOverlay(backend) {
+  const pages = new Map();
+  let virtualLen = backend.len();
+  const baseLen = virtualLen;
+
+  const getOrLoadPage = pageIdx => {
+    let page = pages.get(pageIdx);
+    if (page) return page;
+    page = new Uint8Array(OVERLAY_PAGE_SIZE);
+    const pageStart = pageIdx * OVERLAY_PAGE_SIZE;
+    if (pageStart < baseLen) {
+      const want = Math.min(OVERLAY_PAGE_SIZE, baseLen - pageStart);
+      backend.read(pageStart, page.subarray(0, want));
+    }
+    pages.set(pageIdx, page);
+    return page;
+  };
+
+  return {
+    read(offset, dst) {
+      const avail = Math.max(0, virtualLen - offset);
+      const total = Math.min(dst.byteLength, avail);
+      if (total <= 0) return 0;
+
+      let done = 0;
+      while (done < total) {
+        const pos = offset + done;
+        const pageIdx = Math.floor(pos / OVERLAY_PAGE_SIZE);
+        const rel = pos - pageIdx * OVERLAY_PAGE_SIZE;
+        const chunk = Math.min(OVERLAY_PAGE_SIZE - rel, total - done);
+        const overlay = pages.get(pageIdx);
+        if (overlay) {
+          dst.set(overlay.subarray(rel, rel + chunk), done);
+        } else if (pos < baseLen) {
+          const fromBase = Math.min(chunk, baseLen - pos);
+          const got = backend.read(pos, dst.subarray(done, done + fromBase));
+          if (got < chunk) dst.fill(0, done + got, done + chunk);
+        } else {
+          dst.fill(0, done, done + chunk);
+        }
+        done += chunk;
+      }
+      return total;
+    },
+    write(offset, src) {
+      const len = src.byteLength;
+      if (len === 0) return;
+      let done = 0;
+      while (done < len) {
+        const pos = offset + done;
+        const pageIdx = Math.floor(pos / OVERLAY_PAGE_SIZE);
+        const rel = pos - pageIdx * OVERLAY_PAGE_SIZE;
+        const chunk = Math.min(OVERLAY_PAGE_SIZE - rel, len - done);
+        const page = getOrLoadPage(pageIdx);
+        page.set(src.subarray(done, done + chunk), rel);
+        done += chunk;
+      }
+      const end = offset + len;
+      if (end > virtualLen) virtualLen = end;
+    },
+    len() {
+      return virtualLen;
+    },
+    setLen(newLen) {
+      if (newLen < virtualLen) {
+        const fromPage = Math.ceil(newLen / OVERLAY_PAGE_SIZE);
+        for (const p of pages.keys()) {
+          if (p >= fromPage) pages.delete(p);
+        }
+        const rem = newLen % OVERLAY_PAGE_SIZE;
+        if (rem !== 0) {
+          const tailIdx = Math.floor(newLen / OVERLAY_PAGE_SIZE);
+          const page = getOrLoadPage(tailIdx);
+          page.fill(0, rem);
+        }
+      }
+      virtualLen = newLen;
     },
     sync() {},
     close() {},
@@ -85,7 +174,7 @@ export function assertContainerFormat(roDb) {
     throw new Error('Not a recognized pglite-singlefile-fs container: corrupt format metadata');
   }
   if (format?.magic !== CONTAINER_MAGIC) {
-    throw new Error('Not a pglite-singlefile-fs container');
+    throw new Error('Not a recognized pglite-singlefile-fs container');
   }
   if (format?.version !== FORMAT_VERSION) {
     throw new Error(`Unsupported pglite-singlefile-fs container format version: ${format?.version}`);

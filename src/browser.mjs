@@ -6,12 +6,16 @@ import {
 } from 'redb-js';
 import {
   SingleFileFS,
+  checkpoint,
   setPlatformAdapter,
   verifyBackendSync,
   verifyBackendAsync,
 } from './single-file-fs.mjs';
 
 function openBrowserSync(filename, norm) {
+  if (norm.storage === 'node') {
+    throw new Error('storage: "node" is not available in browser runtimes');
+  }
   if (norm.backend) {
     const format = verifyBackendSync(Redb, norm.backend, norm);
     const store = Redb.openSync(norm.backend, {
@@ -20,7 +24,7 @@ function openBrowserSync(filename, norm) {
     });
     return { store, format, filename };
   }
-  if (filename === ':memory:') {
+  if (filename === ':memory:' || norm.storage === 'memory') {
     const backend = createMemoryBackend(norm.initialBytes);
     const format = verifyBackendSync(Redb, backend, norm);
     const store = Redb.openSync(backend, {
@@ -35,6 +39,9 @@ function openBrowserSync(filename, norm) {
 }
 
 async function openBrowserAsync(filename, norm) {
+  if (norm.storage === 'node') {
+    throw new Error('storage: "node" is not available in browser runtimes');
+  }
   if (norm.backend) {
     const format = await verifyBackendAsync(Redb, norm.backend, norm);
     const store = await Redb.open(norm.backend, {
@@ -73,11 +80,10 @@ setPlatformAdapter({
   openAsync: openBrowserAsync,
 });
 
-export { SingleFileFS, createOpfsBackend, createOpfsBackendFromHandle, createMemoryBackend };
-
-/**
- * Coordinate an explicit PostgreSQL checkpoint with container maintenance.
- */
-export async function checkpoint(db, filesystem, { mode = 'TRUNCATE' } = {}) {
-  return filesystem.checkpointPostgres(db, mode);
-}
+export {
+  SingleFileFS,
+  checkpoint,
+  createOpfsBackend,
+  createOpfsBackendFromHandle,
+  createMemoryBackend,
+};

@@ -1,15 +1,18 @@
 import { BaseFilesystem, type FsStats } from '@electric-sql/pglite/basefs';
 import type { StorageBackend, WasmSource } from 'redb-js';
 
-export type WalCheckpointMode = 'PASSIVE' | 'FULL' | 'RESTART' | 'TRUNCATE';
 export type ChunkCompression = 'sparse' | 'bitsparse32' | 'bitsparse16' | 'zerobytemask' | 'lz4' | 'none';
 /** Byte offsets refer to the underlying bytes of the supplied view. */
 export type ByteBuffer = ArrayBuffer | SharedArrayBuffer | ArrayBufferView;
 
-export interface WalCheckpointResult {
-    busy: number;
-    log: number;
-    checkpointed: number;
+export interface CheckpointOptions {
+    /** Whether to compact free pages in the single redb container after PostgreSQL CHECKPOINT (default: true). */
+    compact?: boolean;
+}
+
+export interface CheckpointResult {
+    /** True if container compaction reclaimed free space. */
+    compacted: boolean;
 }
 
 export interface SingleFileFSOptions {
@@ -17,21 +20,30 @@ export interface SingleFileFSOptions {
     durable?: boolean;
     /** Optional adapter clean chunk cache in bytes; disabled by default. Not a total memory cap. */
     cacheBytes?: number;
-    /** In-memory redb page cache size in bytes; 2 MiB by default. */
+    /** In-memory redb page cache size in bytes; 8 MiB by default. */
     redbCacheBytes?: number;
-    /** Alias for redbCacheBytes. */
-    cacheSize?: number;
     /** Creation setting; an existing image retains its page size (default 8192). */
     pageSize?: 4096 | 8192 | 16384 | 32768 | 65536;
-    /** Chunk encoding mode: 'sparse' (default, fast bitmap zero-skip), 'bitsparse32', 'bitsparse16', 'zerobytemask', 'lz4', or 'none'. */
+    /**
+     * Chunk encoding mode:
+     * - 'sparse' / 'zerobytemask' (default, aliases): hybrid PG-hole + 2-level zero-byte bitmask
+     * - 'bitsparse32': 32-bit word bitmap
+     * - 'bitsparse16': 16-bit word bitmap
+     * - 'lz4': pure-JS LZ4 block compression
+     * - 'none': raw bytes with trailing zeros trimmed
+     */
     compression?: ChunkCompression;
     /** Target storage backend: 'auto' (default), 'node', 'opfs', or 'memory'. */
     storage?: 'auto' | 'node' | 'opfs' | 'memory';
     /** Optional custom redb StorageBackend (e.g. from createOpfsBackendFromHandle). */
     backend?: StorageBackend;
-    /** Optional explicit redb WASM source (URL, WebAssembly.Module, Uint8Array, or ArrayBuffer). */
+    /**
+     * Optional explicit redb WASM source.
+     * `URL | string` is supported by `SingleFileFS.open()`; synchronous `new SingleFileFS()`
+     * requires a `WebAssembly.Module`, `Uint8Array`, or `ArrayBuffer`.
+     */
     wasm?: WasmSource;
-    /** Initial image bytes when opening in ':memory:' mode. */
+    /** Initial image bytes when opening in `':memory:'` or `{ storage: 'memory' }` mode. */
     initialBytes?: Uint8Array;
 }
 
@@ -54,6 +66,10 @@ export interface CheckpointDatabase {
 }
 
 export class SingleFileFS extends BaseFilesystem {
+    /**
+     * Recommended PostgreSQL start parameters for CoW SingleFileFS (`['-c', 'full_page_writes=off']`).
+     */
+    static readonly recommendedStartParams: string[];
     constructor(filename: string, options?: SingleFileFSOptions);
     static open(filename: string, options?: SingleFileFSOptions): Promise<SingleFileFS>;
     readonly filename: string;
@@ -64,18 +80,17 @@ export class SingleFileFS extends BaseFilesystem {
     counters: FilesystemCounters;
     resetCounters(): void;
     syncToFs(relaxedDurability?: boolean): Promise<void>;
-    /** Wait for any relaxed flush and persist pending filesystem changes. */
+    /** Wait for any relaxed flush and durably persist pending filesystem changes. */
     flush(): Promise<void>;
-    checkpointWal(mode?: WalCheckpointMode): Promise<WalCheckpointResult>;
-    /** Run PostgreSQL CHECKPOINT, then flush and compact container storage. */
-    checkpointPostgres(db: CheckpointDatabase, mode?: WalCheckpointMode): Promise<WalCheckpointResult>;
+    /** Run PostgreSQL CHECKPOINT, flush durably, and optionally compact container storage. */
+    checkpointPostgres(db: CheckpointDatabase, options?: CheckpointOptions): Promise<CheckpointResult>;
     /** Compact free pages in the single redb container file. */
     compact(): boolean;
     /** Verify full redb B-tree and checksum integrity. */
     checkIntegrity(): boolean;
-    /** Export the single-file image bytes when backed by ':memory:'. */
+    /** Export the single-file image bytes when backed by MemoryBackend (`':memory:'` or `{ storage: 'memory' }`). */
     exportBytes(): Uint8Array;
-    closeFs(): Promise<void>;
+    closeFs(options?: { compact?: boolean }): Promise<void>;
     chmod(path: string, mode: number): void;
     close(fd: number): void;
     fstat(fd: number): FsStats;
@@ -100,9 +115,11 @@ export class SingleFileFS extends BaseFilesystem {
     }): void;
 }
 
-export function checkpoint(db: CheckpointDatabase, filesystem: SingleFileFS, options?: {
-    mode?: WalCheckpointMode;
-}): Promise<WalCheckpointResult>;
+export function checkpoint(
+    db: CheckpointDatabase,
+    filesystem: SingleFileFS,
+    options?: CheckpointOptions
+): Promise<CheckpointResult>;
 
 export {
     createOpfsBackend,

@@ -6,8 +6,10 @@ import {
   assertBackendIsRedbOrEmpty,
   assertContainerFormat,
   wrapReadOnlyNonClosing,
+  wrapInMemoryRepairOverlay,
 } from './container-format.mjs';
 import {
+  TAG_SPLIT,
   encodeChunk,
   decodeChunkInto,
   encodeNodeBinary,
@@ -16,10 +18,21 @@ import {
 } from './chunk-codec.mjs';
 
 const DEFAULT_PAGE_SIZE = 8192;
-const DEFAULT_REDB_CACHE_BYTES = 2 * 1024 * 1024; // 2 MiB default container page cache
+const DEFAULT_REDB_CACHE_BYTES = 8 * 1024 * 1024; // 8 MiB prevents redb dirty-buffer thrashing on batch writes
 const VALID_PAGE_SIZES = [4096, 8192, 16384, 32768, 65536];
 const VALID_COMPRESSIONS = ['sparse', 'bitsparse32', 'bitsparse16', 'zerobytemask', 'lz4', 'none'];
 const HAS_SAB = typeof SharedArrayBuffer !== 'undefined';
+
+// redb 4 KiB buddy-allocator leaf cliff: values > 8,170 B jump from 8 KiB to 16 KiB pages (2.02x bloat).
+// Splitting > 8,170 B payloads into 4,060 B pieces fits each piece in a 4 KiB page (~48% smaller & faster).
+const REDB_LEAF_CLIFF = 8170;
+const SPLIT_PART_SIZE = 4060;
+const MAX_POOL_PAGES = 512;
+
+const ERRNO = {
+  ...ERRNO_CODES,
+  EBUSY: ERRNO_CODES.EBUSY ?? 10,
+};
 
 const textEncoder = new TextEncoder();
 
@@ -61,7 +74,11 @@ function encodeString(str, encoding = 'utf8') {
 }
 
 const fail = (code, message) => {
-  throw Object.assign(new Error(message), { code: ERRNO_CODES[code] });
+  const errno = ERRNO[code];
+  if (typeof errno !== 'number') {
+    throw new Error(`Internal error: unknown errno code ${code}`);
+  }
+  throw Object.assign(new Error(message), { code: errno });
 };
 
 const validateIo = (buffer, offset, length, position) => {
@@ -102,6 +119,19 @@ function encodeChunkKey(ino, page, out = new Uint8Array(8)) {
   return out;
 }
 
+function encodeSplitKey(ino, page, sub, out = new Uint8Array(9)) {
+  out[0] = (ino >>> 24) & 0xff;
+  out[1] = (ino >>> 16) & 0xff;
+  out[2] = (ino >>> 8) & 0xff;
+  out[3] = ino & 0xff;
+  out[4] = (page >>> 24) & 0xff;
+  out[5] = (page >>> 16) & 0xff;
+  out[6] = (page >>> 8) & 0xff;
+  out[7] = page & 0xff;
+  out[8] = sub & 0xff;
+  return out;
+}
+
 function decodeChunkPage(key) {
   return ((key[4] << 24) | (key[5] << 16) | (key[6] << 8) | key[7]) >>> 0;
 }
@@ -115,7 +145,6 @@ function normalizeOptions(filename, options = {}) {
     cacheBytes = 0,
     pageSize,
     redbCacheBytes,
-    cacheSize,
     compression = 'sparse',
     storage = 'auto',
     backend,
@@ -142,7 +171,7 @@ function normalizeOptions(filename, options = {}) {
     throw new Error('Unsupported storage mode');
   }
 
-  const effectiveRedbCache = redbCacheBytes ?? cacheSize ?? DEFAULT_REDB_CACHE_BYTES;
+  const effectiveRedbCache = redbCacheBytes ?? DEFAULT_REDB_CACHE_BYTES;
   if (!Number.isSafeInteger(effectiveRedbCache) || effectiveRedbCache <= 0) {
     throw new Error('redbCacheBytes must be positive');
   }
@@ -170,10 +199,10 @@ export function setPlatformAdapter(adapter) {
 }
 
 /**
- * Inspect an existing backend read-only before opening it read-write.
- * Works across Node.js, Bun, Deno, Browser OPFS, and Memory backends.
- * Returns parsed format metadata, null if empty, or `{ needsRepair: true }`
- * when a redb image needs crash repair after an unclean shutdown (SIGKILL).
+ * Inspect an existing backend without ever mutating it on disk/OPFS.
+ * If an uncleanly closed redb image requires crash repair ("Repair aborted" on
+ * read-only open), repairs purely inside an in-memory Copy-on-Write overlay so
+ * foreign redb files remain 100% byte-for-byte untouched.
  */
 export function verifyBackendSync(RedbClass, backend, options) {
   const nonEmpty = assertBackendIsRedbOrEmpty(backend);
@@ -187,7 +216,17 @@ export function verifyBackendSync(RedbClass, backend, options) {
     });
   } catch (error) {
     if (/repair aborted/i.test(String(error?.message ?? error))) {
-      return { needsRepair: true };
+      const overlay = wrapInMemoryRepairOverlay(backend);
+      const repairDb = RedbClass.openSync(overlay, {
+        readOnly: false,
+        cacheSize: 256 * 1024,
+        wasm: options.wasm,
+      });
+      try {
+        return assertContainerFormat(repairDb);
+      } finally {
+        repairDb.close();
+      }
     }
     throw error;
   }
@@ -210,7 +249,17 @@ export async function verifyBackendAsync(RedbClass, backend, options) {
     });
   } catch (error) {
     if (/repair aborted/i.test(String(error?.message ?? error))) {
-      return { needsRepair: true };
+      const overlay = wrapInMemoryRepairOverlay(backend);
+      const repairDb = await RedbClass.open(overlay, {
+        readOnly: false,
+        cacheSize: 256 * 1024,
+        wasm: options.wasm,
+      });
+      try {
+        return assertContainerFormat(repairDb);
+      } finally {
+        repairDb.close();
+      }
     }
     throw error;
   }
@@ -225,6 +274,15 @@ export async function verifyBackendAsync(RedbClass, backend, options) {
 // stores opaque virtual-file metadata and self-describing sparse/compressed
 // 8 KiB chunks in strictly ONE portable file across Node.js, Bun, Deno, and Browser OPFS.
 export class SingleFileFS extends BaseFilesystem {
+  /**
+   * Recommended PostgreSQL start parameters when backed by SingleFileFS.
+   * Because redb commits every 8 KiB chunk atomically via Copy-on-Write,
+   * torn pages cannot occur, making full_page_writes unnecessary.
+   */
+  static get recommendedStartParams() {
+    return ['-c', 'full_page_writes=off'];
+  }
+
   constructor(filename, options = {}) {
     super();
     const norm = normalizeOptions(filename, options);
@@ -252,9 +310,6 @@ export class SingleFileFS extends BaseFilesystem {
     this.store = store;
 
     try {
-      if (existingFormat?.needsRepair) {
-        existingFormat = assertContainerFormat(this.store);
-      }
       if (existingFormat) {
         if (norm.pageSize !== undefined && existingFormat.pageSize !== norm.pageSize) {
           throw new Error('Existing image has a different pageSize');
@@ -265,6 +320,8 @@ export class SingleFileFS extends BaseFilesystem {
       }
 
       this._keyBuf = new Uint8Array(8);
+      this._splitKeyBuf = new Uint8Array(9);
+      this._splitHeadBuf = new Uint8Array(2 + SPLIT_PART_SIZE);
       this._startKeyBuf = new Uint8Array(8);
       this._endKeyBuf = new Uint8Array(8);
       this._nodeKeyBuf = new Uint8Array(4);
@@ -272,6 +329,7 @@ export class SingleFileFS extends BaseFilesystem {
       this._encBuf = new Uint8Array(this.pageSize + 1024);
       this._decBuf = new Uint8Array(this.pageSize + 1024);
       this._readPageBuf = new Uint8Array(this.pageSize);
+      this._pagePool = [];
 
       this.nodes = new Map();
       this.inodes = new Map();
@@ -342,7 +400,9 @@ export class SingleFileFS extends BaseFilesystem {
       this.fds = new Map();
       this.fdFlags = new Map();
       this.nextFd = 1;
+      /** @type {Map<number, Map<number, Uint8Array>>} ino -> (page -> Uint8Array) */
       this.dirty = new Map();
+      this._dirtyCount = 0;
       this.dirtyNodes = new Set();
       this.deletedNodes = new Map(); // ino -> persistedSize
       this.truncates = new Map(); // ino -> lowest fromPage truncated since last commit
@@ -353,6 +413,7 @@ export class SingleFileFS extends BaseFilesystem {
       this.closed = false;
       this.flushPromise = null;
       this.flushError = null;
+      this._needsHardwareSync = false;
       this.resetCounters();
     } catch (error) {
       try {
@@ -420,9 +481,49 @@ export class SingleFileFS extends BaseFilesystem {
     return n;
   }
 
-  key(ino, page) {
-    // Packed numeric key (safe integer for ino < 2^21 and page < 2^32) — zero string allocation
-    return ino * 0x100000000 + page;
+  _cacheKey(ino, page) {
+    return ino < 0x200000 ? ino * 0x100000000 + page : `${ino}:${page}`;
+  }
+
+  _getDirty(ino, page) {
+    const pages = this.dirty.get(ino);
+    return pages ? pages.get(page) : undefined;
+  }
+
+  _setDirty(ino, page, data) {
+    let pages = this.dirty.get(ino);
+    if (!pages) {
+      pages = new Map();
+      this.dirty.set(ino, pages);
+    }
+    const existed = pages.has(page);
+    if (!existed) this._dirtyCount++;
+    pages.set(page, data);
+    return existed;
+  }
+
+  _allocPageBuf(zero = false) {
+    if (this._pagePool.length > 0) {
+      const buf = this._pagePool.pop();
+      if (zero) buf.fill(0);
+      return buf;
+    }
+    return new Uint8Array(this.pageSize);
+  }
+
+  _recyclePageBuf(buf) {
+    if (this.cachePages === 0 && this._pagePool.length < MAX_POOL_PAGES && buf.byteLength === this.pageSize) {
+      this._pagePool.push(buf);
+    }
+  }
+
+  _ensureDecBuf(needed) {
+    if (this._decBuf.byteLength < needed) {
+      let cap = this._decBuf.byteLength || this.pageSize + 1024;
+      while (cap < needed) cap *= 2;
+      this._decBuf = new Uint8Array(cap);
+    }
+    return this._decBuf;
   }
 
   _hasOpenFd(ino) {
@@ -447,17 +548,19 @@ export class SingleFileFS extends BaseFilesystem {
     }
   }
 
-  cachePage(key, data) {
+  cachePage(ino, page, data) {
     if (!this.cachePages) return;
+    const key = this._cacheKey(ino, page);
     this.cache.delete(key);
-    this.cache.set(key, data);
+    this.cache.set(key, { ino, page, data });
     while (this.cache.size > this.cachePages) {
       this.cache.delete(this.cache.keys().next().value);
     }
   }
 
   /**
-   * Load a persisted clean page from redb directly into `dst` (which must be length pageSize).
+   * Load a persisted clean page from redb directly into `dst` (length pageSize)
+   * with zero intermediate copies via `rtx.getView`.
    */
   _loadCleanPageInto(ino, page, dst, zeroDst = true) {
     if (zeroDst) dst.fill(0);
@@ -467,45 +570,66 @@ export class SingleFileFS extends BaseFilesystem {
       n?.persisted &&
       page * this.pageSize < n.persistedSize &&
       (truncLimit === undefined || page < truncLimit);
-    if (canExistOnDisk) {
-      const rtx = this._getReadTx();
-      const encLen = rtx.getInto('chunks', encodeChunkKey(ino, page, this._keyBuf), this._decBuf, 0);
-      if (encLen > 0) {
-        decodeChunkInto(this._decBuf.subarray(0, encLen), dst, false);
-      }
+    if (!canExistOnDisk) return;
+
+    const rtx = this._getReadTx();
+    const raw = rtx.getView('chunks', encodeChunkKey(ino, page, this._keyBuf));
+    if (!raw || raw.byteLength === 0) return;
+
+    if (raw[0] !== TAG_SPLIT) {
+      decodeChunkInto(raw, dst, false);
+      return;
     }
+
+    if (raw.byteLength < 2) {
+      throw new Error('Corrupt pglite-singlefile-fs split chunk header');
+    }
+    const partCount = raw[1];
+    let totalLen = raw.byteLength - 2;
+    let dec = this._ensureDecBuf(totalLen);
+    dec.set(raw.subarray(2), 0);
+    for (let sub = 1; sub < partCount; sub++) {
+      const part = rtx.getView('chunks', encodeSplitKey(ino, page, sub, this._splitKeyBuf));
+      if (!part) {
+        throw new Error('Corrupt pglite-singlefile-fs split chunk: missing part');
+      }
+      dec = this._ensureDecBuf(totalLen + part.byteLength);
+      dec.set(part, totalLen);
+      totalLen += part.byteLength;
+    }
+    decodeChunkInto(dec.subarray(0, totalLen), dst, false);
   }
 
   page(ino, page) {
-    const key = this.key(ino, page);
-    const dirty = this.dirty.get(key);
+    const dirty = this._getDirty(ino, page);
     if (dirty) {
       this.counters.cacheHits++;
-      return dirty.data;
+      return dirty;
     }
-    const cached = this.cache.get(key);
-    if (cached) {
-      this.counters.cacheHits++;
-      this.cachePage(key, cached);
-      return cached;
+    if (this.cachePages > 0) {
+      const key = this._cacheKey(ino, page);
+      const cached = this.cache.get(key);
+      if (cached) {
+        this.counters.cacheHits++;
+        this.cachePage(ino, page, cached.data);
+        return cached.data;
+      }
     }
     this.counters.cacheMisses++;
     const data = new Uint8Array(this.pageSize);
     this._loadCleanPageInto(ino, page, data, false);
-    this.cachePage(key, data);
+    this.cachePage(ino, page, data);
     return data;
   }
 
   savePage(n, page, data) {
-    const key = this.key(n.ino, page);
-    if (this.dirty.has(key)) this.counters.coalescedWrites++;
-    this.dirty.set(key, { ino: n.ino, page, data });
-    this.cachePage(key, data);
+    if (this._setDirty(n.ino, page, data)) this.counters.coalescedWrites++;
+    this.cachePage(n.ino, page, data);
   }
 
   hasPendingChanges() {
     return (
-      this.dirty.size > 0 ||
+      this._dirtyCount > 0 ||
       this.dirtyNodes.size > 0 ||
       this.deletedNodes.size > 0 ||
       this.truncates.size > 0 ||
@@ -513,41 +637,68 @@ export class SingleFileFS extends BaseFilesystem {
     );
   }
 
+  /**
+   * Delete all persisted chunks (including any 9-byte split tail keys) for `ino`
+   * starting at `fromPage`, paginated in 256-entry batches to keep WASM memory bounded
+   * even when dropping multi-gigabyte tables.
+   */
   _deletePersistedChunks(tx, ino, fromPage, persistedSize) {
     const persistedPages = Math.ceil(persistedSize / this.pageSize);
     if (fromPage >= persistedPages) return;
-    const span = persistedPages - fromPage;
-    if (span <= 4096) {
-      for (let p = fromPage; p < persistedPages; p++) {
-        tx.delete('chunks', encodeChunkKey(ino, p, this._keyBuf));
-      }
-      return;
-    }
     const start = encodeChunkKey(ino, fromPage, new Uint8Array(8));
-    const end = encodeChunkKey(ino + 1, 0, new Uint8Array(8));
-    const rows = tx.scan('chunks', { start, end });
-    for (let i = 0; i < rows.length; i++) {
-      tx.delete('chunks', rows[i].key);
+    const end = ino === 0xffffffff ? undefined : encodeChunkKey(ino + 1, 0, new Uint8Array(8));
+    const scanOpts = end ? { start, end, limit: 256 } : { start, limit: 256 };
+    for (;;) {
+      const rows = tx.scan('chunks', scanOpts);
+      if (rows.length === 0) break;
+      for (let i = 0; i < rows.length; i++) {
+        tx.delete('chunks', rows[i].key);
+      }
+      if (rows.length < 256) break;
     }
   }
 
   /**
    * Hookable chunk write helper (also used by crash-recovery tests to verify
    * atomicity when SIGKILL arrives mid-WriteTransaction before commit).
+   * Splits payloads > 8,170 B into 4,060 B pieces to avoid redb's 16 KiB buddy-allocator cliff.
    */
-  _writeChunk(tx, ino, page, data) {
-    tx.set('chunks', encodeChunkKey(ino, page, this._keyBuf), data);
+  _writeChunk(tx, ino, page, encoded) {
+    const encLen = encoded.byteLength;
+    if (encLen <= REDB_LEAF_CLIFF) {
+      tx.set('chunks', encodeChunkKey(ino, page, this._keyBuf), encoded);
+      return;
+    }
+    const partCount = Math.ceil(encLen / SPLIT_PART_SIZE);
+    const headLen = Math.min(SPLIT_PART_SIZE, encLen);
+    this._splitHeadBuf[0] = TAG_SPLIT;
+    this._splitHeadBuf[1] = partCount;
+    this._splitHeadBuf.set(encoded.subarray(0, headLen), 2);
+    tx.set('chunks', encodeChunkKey(ino, page, this._keyBuf), this._splitHeadBuf.subarray(0, 2 + headLen));
+    for (let sub = 1; sub < partCount; sub++) {
+      const sOff = sub * SPLIT_PART_SIZE;
+      const sEnd = Math.min(sOff + SPLIT_PART_SIZE, encLen);
+      tx.set('chunks', encodeSplitKey(ino, page, sub, this._splitKeyBuf), encoded.subarray(sOff, sEnd));
+    }
   }
 
-  commitChanges() {
+  commitChanges({ sync = this.durable } = {}) {
     this.check();
-    if (!this.hasPendingChanges()) return;
+    const effectiveSync = this.durable && sync;
+    if (!this.hasPendingChanges()) {
+      if (effectiveSync && this._needsHardwareSync) {
+        this.store.sync();
+        this._needsHardwareSync = false;
+      }
+      return;
+    }
 
     // Close any open ReadTransaction BEFORE committing so redb can immediately
     // reclaim and reuse freed pages without growing the single file.
     this._closeReadTx();
 
-    const tx = this.store.beginWrite({ durable: this.durable });
+    const writtenNodes = [];
+    const tx = this.store.beginWrite({ durable: this.durable, sync: effectiveSync });
     try {
       for (const [ino, persistedSize] of this.deletedNodes) {
         if (persistedSize > 0) {
@@ -564,36 +715,36 @@ export class SingleFileFS extends BaseFilesystem {
         }
       }
 
-      let dirtyList;
-      if (this.dirty.size > 1) {
-        // Insert dirty chunks in sorted (ino, page) numeric key order for optimal B-tree leaf locality
-        const keys = [...this.dirty.keys()].sort((a, b) => a - b);
-        dirtyList = new Array(keys.length);
-        for (let i = 0; i < keys.length; i++) dirtyList[i] = this.dirty.get(keys[i]);
-      } else {
-        dirtyList = this.dirty.values();
-      }
-
-      for (const { ino, page, data } of dirtyList) {
-        if (this.deletedNodes.has(ino)) continue;
-        const encoded = encodeChunk(data, this.compression, this._encBuf);
-        const encLen = encoded.byteLength;
-        if (encLen > 0) {
-          this.counters.trimmedBytes += Math.max(0, this.pageSize - encLen);
-          this._writeChunk(tx, ino, page, encoded);
-          this.counters.blobPuts++;
-          this.counters.storedBytes += encLen;
-        } else {
-          this.counters.trimmedBytes += this.pageSize;
-          this.counters.zeroChunks++;
+      // Insert dirty chunks in sorted (ino, page) order for optimal B-tree leaf locality
+      if (this._dirtyCount > 0) {
+        const inos = this.dirty.size > 1 ? Array.from(this.dirty.keys()).sort((a, b) => a - b) : this.dirty.keys();
+        for (const ino of inos) {
+          if (this.deletedNodes.has(ino)) continue;
+          const pagesMap = this.dirty.get(ino);
+          const pages = pagesMap.size > 1 ? Array.from(pagesMap.keys()).sort((a, b) => a - b) : pagesMap.keys();
           const n = this.inodes.get(ino);
           const truncLimit = this.truncates.get(ino);
-          if (
-            n?.persisted &&
-            page * this.pageSize < n.persistedSize &&
-            (truncLimit === undefined || page < truncLimit)
-          ) {
-            tx.delete('chunks', encodeChunkKey(ino, page, this._keyBuf));
+
+          for (const page of pages) {
+            const data = pagesMap.get(page);
+            const encoded = encodeChunk(data, this.compression, this._encBuf);
+            const encLen = encoded.byteLength;
+            if (encLen > 0) {
+              this.counters.trimmedBytes += Math.max(0, this.pageSize - encLen);
+              this._writeChunk(tx, ino, page, encoded);
+              this.counters.blobPuts++;
+              this.counters.storedBytes += encLen;
+            } else {
+              this.counters.trimmedBytes += this.pageSize;
+              this.counters.zeroChunks++;
+              if (
+                n?.persisted &&
+                page * this.pageSize < n.persistedSize &&
+                (truncLimit === undefined || page < truncLimit)
+              ) {
+                tx.delete('chunks', encodeChunkKey(ino, page, this._keyBuf));
+              }
+            }
           }
         }
       }
@@ -622,13 +773,12 @@ export class SingleFileFS extends BaseFilesystem {
           n.mode === n.persistedMode &&
           n.path === n.persistedPath
         ) {
-          n.mtimeExplicit = false;
+          writtenNodes.push(n);
           continue;
         }
         tx.set('nodes', encodeNodeKey(ino, this._nodeKeyBuf), encodeNodeBinary(n, this._nodeBuf));
         this.counters.metadataUpdates++;
-        n.mtimeExplicit = false;
-        n._nodeWritten = true;
+        writtenNodes.push(n);
       }
 
       if (this.metaDirty) {
@@ -644,18 +794,27 @@ export class SingleFileFS extends BaseFilesystem {
     }
 
     this.counters.commits++;
-    for (const ino of this.dirtyNodes) {
-      const n = this.inodes.get(ino);
-      if (n && n._nodeWritten) {
-        n._nodeWritten = false;
-        n.persisted = true;
-        n.persistedSize = n.size;
-        n.persistedMtime = n.mtime;
-        n.persistedMode = n.mode;
-        n.persistedPath = n.path;
+    if (this.durable) {
+      this._needsHardwareSync = !effectiveSync;
+    }
+    for (let i = 0; i < writtenNodes.length; i++) {
+      const n = writtenNodes[i];
+      n.mtimeExplicit = false;
+      n.persisted = true;
+      n.persistedSize = n.size;
+      n.persistedMtime = n.mtime;
+      n.persistedMode = n.mode;
+      n.persistedPath = n.path;
+    }
+    if (this.cachePages === 0 && this._dirtyCount > 0) {
+      for (const pagesMap of this.dirty.values()) {
+        for (const buf of pagesMap.values()) {
+          this._recyclePageBuf(buf);
+        }
       }
     }
     this.dirty.clear();
+    this._dirtyCount = 0;
     this.dirtyNodes.clear();
     this.deletedNodes.clear();
     this.truncates.clear();
@@ -673,29 +832,42 @@ export class SingleFileFS extends BaseFilesystem {
       return relaxed ? Promise.resolve() : Promise.reject(this.flushError);
     }
     if (this.flushPromise) {
-      return relaxed
-        ? this.flushPromise
-        : this.flushPromise.then(() => {
-            if (this.flushError) throw this.flushError;
-          });
+      if (relaxed) return this.flushPromise;
+      return this.flushPromise.then(() => {
+        if (this.flushError) throw this.flushError;
+        if (!this.closed) {
+          try {
+            this.commitChanges({ sync: true });
+          } catch (e) {
+            this.flushError = e;
+            throw e;
+          }
+        }
+      });
     }
     if (!relaxed) {
       try {
-        this.commitChanges();
+        this.commitChanges({ sync: true });
         return Promise.resolve();
       } catch (e) {
         this.flushError = e;
         return Promise.reject(e);
       }
     }
-    this.flushPromise = this.waitForFlush()
-      .then(() => this.commitChanges())
-      .catch(error => {
-        this.flushError = error;
-      }) // PGlite fire-and-forgets relaxed syncs.
-      .finally(() => {
+    // Relaxed mode: coalesce back-to-back queries and write atomic CoW pages + superblock
+    // to OS page cache / OPFS handle (SIGKILL & corruption safe) without per-query fsync.
+    // Explicit flush() and closeFs() call hardware sync().
+    this.flushPromise = this.waitForFlush().then(() => {
+      try {
+        if (!this.closed && !this.flushError) {
+          this.commitChanges({ sync: false });
+        }
+      } catch (error) {
+        this.flushError = error; // PGlite fire-and-forgets relaxed syncs.
+      } finally {
         this.flushPromise = null;
-      });
+      }
+    });
     return this.flushPromise;
   }
 
@@ -709,34 +881,29 @@ export class SingleFileFS extends BaseFilesystem {
   async flush() {
     if (this.flushPromise) await this.flushPromise;
     if (this.flushError) throw this.flushError;
-    if (!this.closed) this.commitChanges();
+    if (!this.closed) this.commitChanges({ sync: true });
   }
 
-  async checkpointWal(mode = 'PASSIVE') {
-    if (!['PASSIVE', 'FULL', 'RESTART', 'TRUNCATE'].includes(mode)) {
-      throw new Error('Unsupported WAL checkpoint mode');
-    }
-    await this.flush();
-    this.check();
-    // redb uses Copy-on-Write commits in a single file with no WAL sidecar.
-    // On TRUNCATE, compact free pages at the tail of the single file.
-    if (mode === 'TRUNCATE') {
-      this._closeReadTx();
-      this.store.compact();
-    }
-    return { busy: 0, log: 0, checkpointed: 0 };
-  }
-
-  async checkpointPostgres(db, mode = 'TRUNCATE') {
-    if (!['PASSIVE', 'FULL', 'RESTART', 'TRUNCATE'].includes(mode)) {
-      throw new Error('Unsupported WAL checkpoint mode');
+  /**
+   * Run PostgreSQL CHECKPOINT, flush pending changes durably, and optionally compact free pages.
+   */
+  async checkpointPostgres(db, { compact = true } = {}) {
+    if (typeof compact !== 'boolean') {
+      throw new TypeError('compact must be a boolean');
     }
     this.check();
     if (this.pg && this.pg !== db) {
       throw new Error('Checkpoint database must use this filesystem');
     }
     await db.exec('CHECKPOINT');
-    return this.checkpointWal(mode);
+    await this.flush();
+    this.check();
+    let compacted = false;
+    if (compact) {
+      this._closeReadTx();
+      compacted = this.store.compact();
+    }
+    return { compacted };
   }
 
   /**
@@ -744,7 +911,7 @@ export class SingleFileFS extends BaseFilesystem {
    */
   compact() {
     this.check();
-    this.commitChanges();
+    this.commitChanges({ sync: true });
     this._closeReadTx();
     return this.store.compact();
   }
@@ -765,18 +932,30 @@ export class SingleFileFS extends BaseFilesystem {
     if (typeof this.store?.backend?.toUint8Array !== 'function') {
       throw new Error('exportBytes() is only supported on memory-backed SingleFileFS instances');
     }
-    if (!this.closed) this.commitChanges();
+    if (this.flushError) throw this.flushError;
+    if (!this.closed) {
+      const prev = this._flushingClose;
+      this._flushingClose = true;
+      try {
+        for (const n of this.inodes.values()) {
+          if (n.mtime !== n.persistedMtime) this.dirtyNodes.add(n.ino);
+        }
+        this.commitChanges({ sync: true });
+      } finally {
+        this._flushingClose = prev;
+      }
+    }
     return this.store.backend.toUint8Array();
   }
 
-  async closeFs() {
+  async closeFs({ compact = false } = {}) {
     if (this.closed) return;
     if (this.closePromise) return this.closePromise;
-    this.closePromise = this.closeStorage();
+    this.closePromise = this.closeStorage(compact);
     return this.closePromise;
   }
 
-  async closeStorage() {
+  async closeStorage(compact = false) {
     let quitError;
     try {
       this.pg?.Module.FS.quit();
@@ -790,6 +969,10 @@ export class SingleFileFS extends BaseFilesystem {
         if (n.mtime !== n.persistedMtime) this.dirtyNodes.add(n.ino);
       }
       await this.flush();
+      if (compact) {
+        this._closeReadTx();
+        this.store.compact();
+      }
     } finally {
       this._flushingClose = false;
       this._closeReadTx();
@@ -840,6 +1023,9 @@ export class SingleFileFS extends BaseFilesystem {
 
   create(p, mode) {
     this.check();
+    if (this.nextIno > 0xffffffff) {
+      throw new RangeError('Inode limit reached');
+    }
     const ino = this.nextIno++;
     this.metaDirty = true;
     const now = Date.now();
@@ -862,6 +1048,7 @@ export class SingleFileFS extends BaseFilesystem {
   }
 
   mkdir(p, { recursive = false, mode = 0o700 } = {}) {
+    this.check();
     p = this.norm(p);
     if (this.nodes.has(p)) {
       if (recursive) {
@@ -879,6 +1066,7 @@ export class SingleFileFS extends BaseFilesystem {
   }
 
   readdir(p) {
+    this.check();
     p = this.norm(p);
     if (!(this.node(p).mode & 0o40000)) fail('ENOTDIR', p);
     const prefix = p === '/' ? '/' : p + '/';
@@ -937,8 +1125,8 @@ export class SingleFileFS extends BaseFilesystem {
 
     if (last > first) {
       target.fill(0, offset, offset + length);
-      // Multi-page read: one zero-copy redb range scan decoding into reusable _readPageBuf,
-      // then overlay dirty pages.
+      // Multi-page read: one zero-copy redb range scan decoding full interior pages directly
+      // into `target` (and partial boundary pages via `_readPageBuf`), then overlay dirty pages.
       if (n.persisted && n.persistedSize > 0) {
         const truncLimit = this.truncates.get(n.ino);
         const maxDiskPage = Math.ceil(n.persistedSize / PAGE) - 1;
@@ -949,35 +1137,79 @@ export class SingleFileFS extends BaseFilesystem {
           const startKey = encodeChunkKey(n.ino, first, this._startKeyBuf);
           const endKey =
             scanLast === 0xffffffff
-              ? encodeChunkKey(n.ino + 1, 0, this._endKeyBuf)
+              ? n.ino === 0xffffffff
+                ? undefined
+                : encodeChunkKey(n.ino + 1, 0, this._endKeyBuf)
               : encodeChunkKey(n.ino, scanLast + 1, this._endKeyBuf);
           const pageBuf = this._readPageBuf;
-          rtx.scanEach('chunks', { start: startKey, end: endKey }, (k, v) => {
-            const pg = decodeChunkPage(k);
+          let splitPg = -1;
+          let splitExpected = 0;
+          let splitReceived = 0;
+          let splitLen = 0;
+
+          const decodeForPage = (pg, payload) => {
             const pageStart = pg * PAGE;
             const begin = Math.max(position, pageStart);
             const end = Math.min(position + length, pageStart + PAGE);
-            if (end > begin) {
-              decodeChunkInto(v, pageBuf, true);
+            if (end <= begin) return;
+            if (begin === pageStart && end === pageStart + PAGE) {
+              // target is already zero-filled; decode directly into target with 0 intermediate copies
+              decodeChunkInto(payload, target.subarray(offset + begin - position, offset + end - position), false);
+            } else {
+              decodeChunkInto(payload, pageBuf, true);
               target.set(pageBuf.subarray(begin - pageStart, end - pageStart), offset + begin - position);
+            }
+          };
+
+          const scanOpts = endKey ? { start: startKey, end: endKey } : { start: startKey };
+          rtx.scanEach('chunks', scanOpts, (k, v) => {
+            const pg = decodeChunkPage(k);
+            if (k.byteLength === 8) {
+              if (v.byteLength === 0) return;
+              if (v[0] === TAG_SPLIT) {
+                if (v.byteLength < 2) throw new Error('Corrupt pglite-singlefile-fs split chunk header');
+                splitPg = pg;
+                splitExpected = v[1];
+                splitReceived = 1;
+                splitLen = v.byteLength - 2;
+                const dec = this._ensureDecBuf(splitLen);
+                dec.set(v.subarray(2), 0);
+                if (splitExpected === 1) {
+                  decodeForPage(pg, dec.subarray(0, splitLen));
+                  splitPg = -1;
+                }
+                return;
+              }
+              splitPg = -1;
+              decodeForPage(pg, v);
+            } else if (k.byteLength === 9 && pg === splitPg && k[8] === splitReceived) {
+              const dec = this._ensureDecBuf(splitLen + v.byteLength);
+              dec.set(v, splitLen);
+              splitLen += v.byteLength;
+              splitReceived++;
+              if (splitReceived === splitExpected) {
+                decodeForPage(pg, dec.subarray(0, splitLen));
+                splitPg = -1;
+              }
             }
           });
         }
       }
-      if (this.dirty.size > 0) {
-        if (last - first + 1 <= this.dirty.size) {
+      const inoDirty = this.dirty.get(n.ino);
+      if (inoDirty && inoDirty.size > 0) {
+        if (last - first + 1 <= inoDirty.size) {
           for (let pg = first; pg <= last; pg++) {
-            const d = this.dirty.get(this.key(n.ino, pg));
-            if (!d) continue;
+            const data = inoDirty.get(pg);
+            if (!data) continue;
             const pageStart = pg * PAGE;
             const begin = Math.max(position, pageStart);
             const end = Math.min(position + length, pageStart + PAGE);
-            target.set(d.data.subarray(begin - pageStart, end - pageStart), offset + begin - position);
+            target.set(data.subarray(begin - pageStart, end - pageStart), offset + begin - position);
           }
         } else {
-          for (const { ino, page, data } of this.dirty.values()) {
-            if (ino === n.ino && page >= first && page <= last) {
-              const pageStart = page * PAGE;
+          for (const [pg, data] of inoDirty) {
+            if (pg >= first && pg <= last) {
+              const pageStart = pg * PAGE;
               const begin = Math.max(position, pageStart);
               const end = Math.min(position + length, pageStart + PAGE);
               target.set(data.subarray(begin - pageStart, end - pageStart), offset + begin - position);
@@ -987,17 +1219,20 @@ export class SingleFileFS extends BaseFilesystem {
       }
     } else {
       const pStart = position % PAGE;
-      const key = this.key(n.ino, first);
-      const dirty = this.dirty.get(key);
+      const dirty = this._getDirty(n.ino, first);
       if (dirty) {
         this.counters.cacheHits++;
-        target.set(dirty.data.subarray(pStart, pStart + length), offset);
+        target.set(dirty.subarray(pStart, pStart + length), offset);
       } else if (this.cachePages === 0) {
-        // Zero-allocation clean single-page read via reusable scratch page
         this.counters.cacheMisses++;
-        const pageBuf = this._readPageBuf;
-        this._loadCleanPageInto(n.ino, first, pageBuf, true);
-        target.set(pageBuf.subarray(pStart, pStart + length), offset);
+        if (pStart === 0 && length === PAGE) {
+          // Zero-copy aligned single-page read: decode directly from redb WASM memory into target
+          this._loadCleanPageInto(n.ino, first, target.subarray(offset, offset + PAGE), true);
+        } else {
+          const pageBuf = this._readPageBuf;
+          this._loadCleanPageInto(n.ino, first, pageBuf, true);
+          target.set(pageBuf.subarray(pStart, pStart + length), offset);
+        }
       } else {
         target.set(this.page(n.ino, first).subarray(pStart, pStart + length), offset);
       }
@@ -1020,12 +1255,11 @@ export class SingleFileFS extends BaseFilesystem {
       const page = Math.floor(at / PAGE);
       const start = at % PAGE;
       const count = Math.min(PAGE - start, length - done);
-      const key = this.key(n.ino, page);
-      const existingDirty = this.dirty.get(key);
+      const existingDirty = this._getDirty(n.ino, page);
 
       if (existingDirty) {
         // Mutate already-dirty page in place (zero 8 KiB allocation/copy).
-        existingDirty.data.set(source.subarray(offset + done, offset + done + count), start);
+        existingDirty.set(source.subarray(offset + done, offset + done + count), start);
         this.counters.coalescedWrites++;
       } else {
         if (start === 0 && count === PAGE) {
@@ -1042,21 +1276,21 @@ export class SingleFileFS extends BaseFilesystem {
             done += count;
             continue;
           }
-          const data = new Uint8Array(PAGE);
+          const data = this._allocPageBuf(false);
           data.set(source.subarray(offset + done, offset + done + PAGE), 0);
-          this.dirty.set(key, { ino: n.ino, page, data });
-          this.cachePage(key, data);
+          this._setDirty(n.ino, page, data);
+          this.cachePage(n.ino, page, data);
         } else {
           let data;
           if (this.cachePages === 0) {
             this.counters.cacheMisses++;
-            data = new Uint8Array(PAGE);
-            this._loadCleanPageInto(n.ino, page, data, false);
+            data = this._allocPageBuf(false);
+            this._loadCleanPageInto(n.ino, page, data, true);
           } else {
-            const cached = this.cache.get(key);
+            const cached = this.cache.get(this._cacheKey(n.ino, page));
             if (cached) {
               this.counters.cacheHits++;
-              data = cached.slice();
+              data = cached.data.slice();
             } else {
               this.counters.cacheMisses++;
               data = new Uint8Array(PAGE);
@@ -1064,8 +1298,8 @@ export class SingleFileFS extends BaseFilesystem {
             }
           }
           data.set(source.subarray(offset + done, offset + done + count), start);
-          this.dirty.set(key, { ino: n.ino, page, data });
-          this.cachePage(key, data);
+          this._setDirty(n.ino, page, data);
+          this.cachePage(n.ino, page, data);
         }
       }
       done += count;
@@ -1080,14 +1314,26 @@ export class SingleFileFS extends BaseFilesystem {
   }
 
   discard(ino, first) {
-    const minKey = ino * 0x100000000 + first;
-    const maxKey = (ino + 1) * 0x100000000;
-    for (const key of this.dirty.keys()) {
-      if (key >= minKey && key < maxKey) this.dirty.delete(key);
+    const pagesMap = this.dirty.get(ino);
+    if (pagesMap) {
+      if (first === 0) {
+        for (const buf of pagesMap.values()) this._recyclePageBuf(buf);
+        this._dirtyCount -= pagesMap.size;
+        this.dirty.delete(ino);
+      } else {
+        for (const [pg, buf] of pagesMap) {
+          if (pg >= first) {
+            this._recyclePageBuf(buf);
+            pagesMap.delete(pg);
+            this._dirtyCount--;
+          }
+        }
+        if (pagesMap.size === 0) this.dirty.delete(ino);
+      }
     }
     if (this.cache.size > 0) {
-      for (const key of this.cache.keys()) {
-        if (key >= minKey && key < maxKey) this.cache.delete(key);
+      for (const [key, entry] of this.cache) {
+        if (entry.ino === ino && entry.page >= first) this.cache.delete(key);
       }
     }
   }
@@ -1110,10 +1356,9 @@ export class SingleFileFS extends BaseFilesystem {
     this.discard(n.ino, fromPage);
     if (len < n.size && len % PAGE) {
       const page = Math.floor(len / PAGE);
-      const key = this.key(n.ino, page);
-      const existingDirty = this.dirty.get(key);
+      const existingDirty = this._getDirty(n.ino, page);
       if (existingDirty) {
-        existingDirty.data.fill(0, len % PAGE);
+        existingDirty.fill(0, len % PAGE);
       } else {
         const data = this.page(n.ino, page).slice();
         data.fill(0, len % PAGE);
@@ -1171,6 +1416,7 @@ export class SingleFileFS extends BaseFilesystem {
   }
 
   rename(from, to) {
+    this.check();
     from = this.norm(from);
     to = this.norm(to);
     const n = this.node(from);
@@ -1208,4 +1454,11 @@ export class SingleFileFS extends BaseFilesystem {
       this.dirtyNodes.add(n.ino);
     }
   }
+}
+
+/**
+ * Coordinate an explicit PostgreSQL CHECKPOINT with container flush & optional compaction.
+ */
+export async function checkpoint(db, filesystem, options = {}) {
+  return filesystem.checkpointPostgres(db, options);
 }

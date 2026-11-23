@@ -1,4 +1,6 @@
-# Repository setup request
+# Repository setup request (historical v0.1 brief)
+
+> **Historical note:** This document preserves the original v0.1 setup brief (when the initial prototype used SQLite). Starting with v1.0, `pglite-singlefile-fs` uses [`redb-js`](https://github.com/jbsiddall/redb-js) (WebAssembly) for strictly single-file storage across Node.js, Bun, Deno, and Browser OPFS with zero `-wal`/`-shm` sidecars. See [README.md](../README.md) for current architecture and usage.
 
 Publish `pglite-singlefile-fs` as a maintained PGlite virtual filesystem whose goal is the power of PostgreSQL in one portable database file. The current container implementation may use SQLite, but the project identity should focus on the outcome. Explain the implementation openly without making it the headline.
 

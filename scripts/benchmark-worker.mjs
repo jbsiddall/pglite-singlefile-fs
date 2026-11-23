@@ -16,9 +16,9 @@ export async function initialize(options = {}) {
   config = { backend: 'nodefs', rows: 10000, frequent: 500, batch: 10000, ...options };
   initialRows = config.rows;
   if (!Number.isSafeInteger(initialRows) || initialRows < config.frequent) throw new Error('rows must cover frequent operations');
-  fs = config.backend === 'singlefile' ? new SingleFileFS(join(root, 'database.pglite'), { durable: true, cacheBytes: 0, redbCacheBytes: 2 * 1024 * 1024, pageSize: 8192 }) : null;
-  const startParams = [...PGlite.defaultStartParams, '-c', `shared_buffers=${fs ? 98 : 100}MB`];
-  db = fs ? await PGlite.create({ fs, startParams }) : await PGlite.create(join(root, 'pgdata'), { startParams });
+  fs = config.backend === 'singlefile' ? new SingleFileFS(join(root, 'database.pglite'), { durable: config.durable ?? true, cacheBytes: 0, redbCacheBytes: 8 * 1024 * 1024, pageSize: 8192 }) : null;
+  const startParams = [...PGlite.defaultStartParams, '-c', `shared_buffers=${fs ? 92 : 100}MB`];
+  db = fs ? await PGlite.create({ fs, startParams, relaxedDurability: Boolean(config.relaxedDurability) }) : await PGlite.create(join(root, 'pgdata'), { startParams, relaxedDurability: Boolean(config.relaxedDurability) });
   const backendFs = db.fs;
   if(typeof backendFs.read==='function'){
     const originalRead=backendFs.read.bind(backendFs);
@@ -32,7 +32,7 @@ export async function initialize(options = {}) {
   await db.query('SELECT count(*)::int AS n,sum(amount)::text AS total FROM orders');
   await db.query('SELECT amount FROM orders WHERE id=$1', [1]);
   await settle();
-  return { runtime, runtimeFlags:process.env.JSC_useWasmOSR===undefined?{}:{JSC_useWasmOSR:process.env.JSC_useWasmOSR}, platform: process.platform, arch: process.arch, cpu: cpus()[0]?.model, config, pageCacheMiB: { postgres: fs ? 98 : 100, redb: fs ? 2 : 0, adapterClean: 0 }, settings: (await db.query("SELECT name,setting FROM pg_settings WHERE name IN ('fsync','shared_buffers','synchronous_commit','full_page_writes') ORDER BY name")).rows };
+  return { runtime, runtimeFlags:process.env.JSC_useWasmOSR===undefined?{}:{JSC_useWasmOSR:process.env.JSC_useWasmOSR}, platform: process.platform, arch: process.arch, cpu: cpus()[0]?.model, config, pageCacheMiB: { postgres: fs ? 92 : 100, redb: fs ? 8 : 0, adapterClean: 0 }, settings: (await db.query("SELECT name,setting FROM pg_settings WHERE name IN ('fsync','shared_buffers','synchronous_commit','full_page_writes') ORDER BY name")).rows };
 }
 export async function runWorkload(name) {
   if (!workloads.includes(name)) throw new Error('Unknown workload: '+name);

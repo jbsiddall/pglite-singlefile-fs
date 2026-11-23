@@ -12,6 +12,7 @@ import {
 } from 'redb-js/node';
 import {
   SingleFileFS,
+  checkpoint,
   setPlatformAdapter,
   verifyBackendSync,
   verifyBackendAsync,
@@ -58,6 +59,11 @@ function openServerSync(filename, norm) {
       wasm: norm.wasm,
     });
     return { store, format, filename };
+  }
+  if (norm.storage === 'opfs') {
+    throw new Error(
+      'OPFS storage requires asynchronous opening: use await SingleFileFS.open(filename, { storage: "opfs", ... }) inside a Dedicated Web Worker'
+    );
   }
   const resolved = path.resolve(filename);
   const existsNonEmpty = assertExistingNodeFileSync(resolved);
@@ -150,11 +156,10 @@ setPlatformAdapter({
   openAsync: openServerAsync,
 });
 
-export { SingleFileFS, createOpfsBackend, createOpfsBackendFromHandle, createMemoryBackend };
-
-/**
- * Coordinate an explicit PostgreSQL checkpoint with container maintenance.
- */
-export async function checkpoint(db, filesystem, { mode = 'TRUNCATE' } = {}) {
-  return filesystem.checkpointPostgres(db, mode);
-}
+export {
+  SingleFileFS,
+  checkpoint,
+  createOpfsBackend,
+  createOpfsBackendFromHandle,
+  createMemoryBackend,
+};

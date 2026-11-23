@@ -1,56 +1,33 @@
 # Recorded benchmark snapshots
 
-These files preserve complete measured reports, not selected best timings. They are snapshots of this host and revision, not universal performance guarantees.
+These files preserve complete measured reports, not selected best timings. They are snapshots of the recorded host and revision, not universal performance guarantees.
 
-## Six operations
+## Current (`redb-js` WebAssembly backend)
 
-- [Raw JSON](node24-linux-x64.json): Node.js 24.21.0 LTS, Linux x86-64, AMD EPYC 9V74.
-- [HTML report](node24-linux-x64.html): the same data in a readable report.
-- Five measured fresh-process suites per backend and one excluded warm-up. The execution order alternates between native PGlite NodeFS and SingleFileFS.
-- 10,000-row batch reads, inserts, and updates; 500 individual lookups, inserts, and updates.
-- The table compares the ratio of each backend's median settled operation time. Startup and verification are excluded; pending persistence is included.
-- Configured page-cache budget: native PostgreSQL 100 MiB; SingleFileFS PostgreSQL 98 MiB plus SQLite 2 MiB. Adapter clean cache is disabled. This is not a whole-process RAM cap.
-- Reads are explicitly warm and made zero filesystem reads. Operating-system caches are not cleared, and no NVMe-specific result is claimed.
-- Durability differs: SingleFileFS uses SQLite `synchronous=FULL`; upstream NodeFS runs PostgreSQL with `fsync=off`. These are default-backend comparisons, not equal power-loss durability comparisons.
+### Node.js: `SingleFileFS` vs built-in `NodeFS`
 
-Reproduce from the repository with `npm run bench:sample`. CI also records its own runtime/platform reports; inspect those separately from this local snapshot.
+- [Raw JSON](node23-macos-arm64.json): Node.js v23.1.0, Apple M2 macOS (`darwin/arm64`), 1 excluded warm-up + 3 alternating fresh-process runs per variant.
+- Workloads: `initdb` + startup, 10,000-row batch reads/inserts/updates, 500 individual lookups/inserts/updates, cold reopen + scan, host file count, raw closed size, and post-close compacted size.
+- Configured page-cache budget: **100 MiB total** — `NodeFS` 100 MiB PostgreSQL `shared_buffers`; `SingleFileFS` 92 MiB PostgreSQL `shared_buffers` + 8 MiB `redb` cache (adapter clean cache disabled). Not a whole-process RAM cap.
+- Durability disclosure: built-in `NodeFS` runs PostgreSQL with `fsync=off`. `SingleFileFS (strict)` executes hardware `F_FULLFSYNC` on every query on macOS (~4.1 ms/call vs Linux `fdatasync` ~0.05–0.3 ms/call). `SingleFileFS (relaxed)` writes atomic CoW commits to the OS page cache (`SIGKILL`-safe) and hardware-syncs on `flush()` / `close()`.
 
-## Initial hosted matrix
+Reproduce standard strict `NodeFS` vs `SingleFileFS` sampling with `npm run bench:sample`.
 
-[Complete raw matrix snapshot](initial-ci-matrix.json) · [GitHub run and artifacts](https://github.com/jbsiddall/pglite-singlefile-fs/actions/runs/37041731782)
+### Browser OPFS: `SingleFileFS` vs built-in `OpfsAhpFS`
 
-All 15 lanes passed 11 tests and six Vitest benchmarks. Fourteen completed the separate sampled benchmark; Bun 1.2.23 Linux failed during a later native-filesystem worker iteration. Its partial data and failure remain in the report, and no final ratios are invented for that lane.
+Reproduce directly inside headless Chrome with `npm run test:browser` (Chrome 157.0.8103.80 Dedicated Web Worker, 2,000-row batch / 100 frequent operations, 8 MiB `redb` cache, single run per variant; results summarized in the top-level [README.md](../../README.md#browser-wasm-opfs-singlefilefs-vs-built-in-opfsahpfs)).
 
-The hosted Node.js 24.21.0 Linux ratios differ materially from the local run: **2.60×** individual inserts and **2.42×** individual updates, versus **1.04×** and **1.05×** locally. Bun 1.4.2 on Linux x86-64 measured **9.15×** and **8.33×** for those operations. All matrix results are retained; selecting only the favorable local measurements would misrepresent the current cost.
+---
 
-Runtime and host conditions vary, and SQLite FULL versus native PostgreSQL `fsync=off` remains an important durability difference. This report does not isolate one cause for the variation. The tested head and merge commits are recorded in the raw matrix snapshot.
+## Historical v0.1.0 snapshots (superseded)
 
-The Bun 1.2.23 startup failure subsequently reproduced with upstream PGlite NodeFS and no adapter imports. An explicitly set `JSC_useWasmOSR=false` passed repeated fresh-process reproductions locally, but the [flagged hosted follow-up](https://github.com/jbsiddall/pglite-singlefile-fs/actions/runs/37043190555) still crashed during a Vitest benchmark. It is not a reliable fix. All 15 correctness-test lanes passed again; benchmark success remained incomplete. [Bun issue #26366](https://github.com/oven-sh/bun/issues/26366) is related; an identical root cause has not been established.
+The files below were recorded during the initial v0.1.0 release (prior to migrating to `redb-js` for single-file server + Browser OPFS support) and are retained unchanged for historical traceability:
 
-The [separate flagged local Bun 1.2.23 report](bun12-linux-x64-wasm-osr-disabled.json) completed five measured suites and one warm-up per backend. Its environment metadata records `JSC_useWasmOSR=false`. This is limited local evidence, not a replacement for either failed hosted run or a general compatibility guarantee.
+- [v0.1.0 six-operation Node 24 Linux report (JSON)](node24-linux-x64.json) · [HTML](node24-linux-x64.html)
+- [v0.1.0 5 GiB large-database join report (JSON)](node24-linux-x64-large.json) · [HTML](node24-linux-x64-large.html)
+- [v0.1.0 initial 15-lane CI matrix snapshot](initial-ci-matrix.json) · [GitHub run](https://github.com/jbsiddall/pglite-singlefile-fs/actions/runs/37041731782)
+- [v0.1.0 Bun 1.2.23 `JSC_useWasmOSR=false` local experiment](bun12-linux-x64-wasm-osr-disabled.json)
+- [v0.1.0 historical Bun native-control abort evidence](historical-bun-native-abort.md)
+- [v0.1.0 validation receipt](../VALIDATION.md)
 
-The [next default-settings run](https://github.com/jbsiddall/pglite-singlefile-fs/actions/runs/37044661943) passed all 15 correctness-test lanes and Bun's six Vitest benchmarks, but the older Bun sampled benchmark failed in a WASM callback with out-of-bounds memory access. That failed run is preserved too.
-
-CI retains default settings and attempts both Vitest and sampled benchmarks. Only observed historical Bun 1.2.23 engine-crash signatures are advisory: segmentation-fault panics; `getWasmTableEntry`/`t(r,a)` WASM callbacks failing with null references, out-of-bounds access or the observed `call_indirect` signature mismatch; or PGlite worker-setup `Aborted()` errors with the known engine `abort` stack frame. The callback out-of-bounds diagnostic initially occurred during SingleFileFS initialization; the [final PR run](https://github.com/jbsiddall/pglite-singlefile-fs/actions/runs/37045613316) also recorded that exact diagnostic during native NodeFS initialization. A shared historical runtime problem is supported, but its exact cause remains unproven. Correctness tests and benchmark assertions/checksums still gate every lane; SQLite/filesystem errors, timeouts, unknown failures, and other runtime crashes are fatal. Failure manifests and partial artifacts are retained, and releases disclose any classified advisory crash. Prefer current Bun versions; a passing required-check result must not be described as every benchmark passing.
-
-The [documentation follow-up run](https://github.com/jbsiddall/pglite-singlefile-fs/actions/runs/37047017697) passed all correctness tests but failed historical Bun sampled worker setup with `RuntimeError: Aborted(). Build with -sASSERTIONS for more info.` The setup phase includes database creation, seeding, a checkpoint, and warm reads; the exact failing substage and cause are unknown. A native NodeFS control reproduced the exact diagnostic and PGlite `abort` frame. It imported the adapter module but did not instantiate SingleFileFS, so this does not isolate adapter-module initialization effects. See the [sanitized native-control evidence](historical-bun-native-abort.md). It supports an observed worker-setup abort classification, not a proven root cause or a runtime fix.
-
-The [later policy-review run](https://github.com/jbsiddall/pglite-singlefile-fs/actions/runs/37048806910) passed all eleven correctness tests in every lane. Historical Bun recorded two advisory Vitest out-of-bounds callback failures and its sampled benchmark failed during single-file worker setup with `RuntimeError: call_indirect to a signature that does not match`, evaluating `getWasmTableEntry(e)(t, r, a, o, _, s)` and an `invoke_viiiiii` frame in PGlite's distribution. The sampled failure initially blocked that run and remains retained. The advisory family now includes this exact observed message under the same Bun-version, callback/context and mixed-error guards. This is a newly observed diagnostic variant; its exact cause and a matching native-storage or zero-adapter-import reproduction have not been established.
-
-The final PR run passed all 15 required matrix jobs and all 11 correctness tests per lane. The older Bun Vitest lane had one advisory engine crash and five passing cases; its sampled benchmark completed. All 15 report artifacts were uploaded.
-
-The separate [first default-branch run](https://github.com/jbsiddall/pglite-singlefile-fs/actions/runs/37046099579) passed all 15 required jobs and published [v0.1.0 with 15 report ZIPs](https://github.com/jbsiddall/pglite-singlefile-fs/releases/tag/v0.1.0). Both historical Bun benchmark phases failed with classified advisory engine crashes in that release run. Its release assets retain those failures; the completed PR sampled run is not a substitute for release results. [Validation receipt](../VALIDATION.md).
-
-## Large database
-
-The opt-in large benchmark is defined by `npm run bench:big`. It creates two application tables, reaches at least 5 GiB of PostgreSQL relation storage including TOAST, and measures a selective customer join before and after adding the event join-key index. Join plans and physical backend sizes are recorded separately.
-
-The run completed on the same Node LTS host with 960,000 events and 10,000 customers. Both backends reached 5.006 GiB of relation storage. The selective join matched 96 events with the same amount sum on both; the query returns one aggregate record. Three measured samples follow one excluded warm-up per phase.
-
-- [Raw JSON with plans, settings, and sizes](node24-linux-x64-large.json).
-- [HTML report](node24-linux-x64-large.html).
-- Join without the event join-key index: **1.60×** native elapsed time.
-- Join with that index: **1.03×** native elapsed time.
-- After closing: **6.034 GiB** native data directory versus **10.216 GiB** container file, or **1.69×** storage.
-
-The joins read keys and amounts, not the complete payload. Operating-system caches are not cleared and the backends run sequentially, so this is not a cold full-payload scan or an order-independent benchmark. Observed storage/WAL peaks in the raw report are sampled at load batch boundaries, not guaranteed overall peaks.
+At v0.1.0, the container backend used each server runtime's built-in SQLite interface (`synchronous=FULL`, 2 MiB cache vs 100 MiB NodeFS with `fsync=off`). CI continues to retain the narrow historical Bun 1.2.23 advisory engine-crash policy verified in [scripts/ci-benchmark-policy-check.mjs](../../scripts/ci-benchmark-policy-check.mjs), while all correctness tests, assertions, backend errors, and unknown failures remain fatal.

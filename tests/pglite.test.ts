@@ -8,7 +8,7 @@ describe(`PGlite lifecycle and durability (${runtime})`, () => {
   it('honors strict/relaxed query completion, drains close, and exposes background persistence errors', async () => {
     expect(await runWorker({ mode: 'durability' }, 240_000)).toEqual({ modes: 4, backgroundFailureObserved: true });
   }, 270_000);
-  it('coordinates a real PostgreSQL checkpoint with container WAL truncation and writable recovery', async () => {
+  it('coordinates a real PostgreSQL checkpoint with container compaction and writable recovery', async () => {
     expect(await runWorker({ mode: 'checkpoint' })).toEqual({ rowsBeforeReopen: 3000, rowsAfterInsert: 3001 });
   }, 210_000);
 });

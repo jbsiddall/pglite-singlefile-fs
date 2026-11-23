@@ -3,10 +3,7 @@ reports/
 .vitest/
 benchmark-data/
 big-benchmark-data/
-*.sqlite
-*.sqlite-wal
-*.sqlite-shm
+*.pglite
+*.redb
 *.db
-*.db-wal
-*.db-shm
 .DS_Store

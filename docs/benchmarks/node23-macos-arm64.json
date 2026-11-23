@@ -1,0 +1,288 @@
+{
+  "timestamp": "2026-11-23T07:21:22.722Z",
+  "node": "v23.1.0",
+  "platform": "darwin",
+  "arch": "arm64",
+  "cpu": "Apple M2",
+  "repeats": 3,
+  "pageCacheBudgetMiB": 100,
+  "summary": [
+    {
+      "variant": "NodeFS (built-in)",
+      "initMs": 669.4,
+      "batchRead": 24,
+      "batchInsert": 16.2,
+      "batchUpdate": 25.8,
+      "frequentRead": 75.2,
+      "frequentInsert": 71.1,
+      "frequentUpdate": 77,
+      "reopenMs": 60.1,
+      "files": 977,
+      "rawMB": 42.25,
+      "compactedMB": 42.25
+    },
+    {
+      "variant": "SingleFileFS (strict)",
+      "initMs": 622.4,
+      "batchRead": 22.7,
+      "batchInsert": 31.7,
+      "batchUpdate": 40,
+      "frequentRead": 73.3,
+      "frequentInsert": 2118.7,
+      "frequentUpdate": 2230,
+      "reopenMs": 76.9,
+      "files": 1,
+      "rawMB": 35.66,
+      "compactedMB": 26.1
+    },
+    {
+      "variant": "SingleFileFS (relaxed)",
+      "initMs": 536.9,
+      "batchRead": 24.1,
+      "batchInsert": 30.6,
+      "batchUpdate": 39,
+      "frequentRead": 71.6,
+      "frequentInsert": 73,
+      "frequentUpdate": 77.3,
+      "reopenMs": 51.3,
+      "files": 1,
+      "rawMB": 35.66,
+      "compactedMB": 26.05
+    },
+    {
+      "variant": "SingleFileFS (relaxed + fpw=off)",
+      "initMs": 534.2,
+      "batchRead": 24.1,
+      "batchInsert": 30,
+      "batchUpdate": 37,
+      "frequentRead": 72.2,
+      "frequentInsert": 73.3,
+      "frequentUpdate": 78.4,
+      "reopenMs": 50.4,
+      "files": 1,
+      "rawMB": 35.66,
+      "compactedMB": 23.62
+    },
+    {
+      "variant": "SingleFileFS lz4 (relaxed)",
+      "initMs": 531.5,
+      "batchRead": 23.6,
+      "batchInsert": 31.8,
+      "batchUpdate": 45,
+      "frequentRead": 71.7,
+      "frequentInsert": 72.8,
+      "frequentUpdate": 77.8,
+      "reopenMs": 60.3,
+      "files": 1,
+      "rawMB": 17.83,
+      "compactedMB": 17.29
+    }
+  ],
+  "raw": {
+    "NodeFS (built-in)": [
+      {
+        "initMs": 669.3693340000009,
+        "batchRead": 22.858290999998644,
+        "batchInsert": 16.16899999999987,
+        "batchUpdate": 25.723667000000205,
+        "frequentRead": 74.95800000000054,
+        "frequentInsert": 70.19545800000014,
+        "frequentUpdate": 76.98329100000046,
+        "reopenMs": 60.1309999999994,
+        "files": 977,
+        "rawMB": 42.246182,
+        "compactedMB": 42.246182
+      },
+      {
+        "initMs": 684.9012909999983,
+        "batchRead": 24.008334000001923,
+        "batchInsert": 16.205166000003373,
+        "batchUpdate": 25.837625000000116,
+        "frequentRead": 75.17654200000106,
+        "frequentInsert": 71.09329200000138,
+        "frequentUpdate": 79.14091600000029,
+        "reopenMs": 62.67199999999866,
+        "files": 977,
+        "rawMB": 42.246182,
+        "compactedMB": 42.246182
+      },
+      {
+        "initMs": 660.7410840000011,
+        "batchRead": 24.291457999999693,
+        "batchInsert": 16.125958000000537,
+        "batchUpdate": 25.771832999998878,
+        "frequentRead": 83.60420800000065,
+        "frequentInsert": 77.50041700000293,
+        "frequentUpdate": 76.97812500000146,
+        "reopenMs": 58.86629199999879,
+        "files": 977,
+        "rawMB": 42.246182,
+        "compactedMB": 42.246182
+      }
+    ],
+    "SingleFileFS (strict)": [
+      {
+        "initMs": 622.4115000000002,
+        "batchRead": 22.655375000000276,
+        "batchInsert": 31.147291999999652,
+        "batchUpdate": 39.109834000000774,
+        "frequentRead": 74.11058400000002,
+        "frequentInsert": 2118.6597920000004,
+        "frequentUpdate": 2230.030041000002,
+        "reopenMs": 76.9118750000016,
+        "files": 1,
+        "rawMB": 35.65568,
+        "compactedMB": 26.103808
+      },
+      {
+        "initMs": 604.2712500000016,
+        "batchRead": 22.688415999997233,
+        "batchInsert": 31.653166000000056,
+        "batchUpdate": 39.99462499999936,
+        "frequentRead": 73.16187499999796,
+        "frequentInsert": 2077.814208,
+        "frequentUpdate": 2061.8184159999983,
+        "reopenMs": 75.86125000000175,
+        "files": 1,
+        "rawMB": 35.65568,
+        "compactedMB": 26.103808
+      },
+      {
+        "initMs": 625.9179999999978,
+        "batchRead": 26.950332999997045,
+        "batchInsert": 32.85841699999946,
+        "batchUpdate": 40.22912500000166,
+        "frequentRead": 73.2892920000013,
+        "frequentInsert": 2164.839958000004,
+        "frequentUpdate": 2250.7010420000006,
+        "reopenMs": 77.53912500000297,
+        "files": 1,
+        "rawMB": 35.65568,
+        "compactedMB": 26.103808
+      }
+    ],
+    "SingleFileFS (relaxed)": [
+      {
+        "initMs": 540.7296669999996,
+        "batchRead": 24.076457999999548,
+        "batchInsert": 30.645583999998053,
+        "batchUpdate": 37.9419999999991,
+        "frequentRead": 74.3055830000012,
+        "frequentInsert": 74.3289999999979,
+        "frequentUpdate": 77.73670800000036,
+        "reopenMs": 51.92362499999945,
+        "files": 1,
+        "rawMB": 35.65568,
+        "compactedMB": 26.054656
+      },
+      {
+        "initMs": 536.9280830000025,
+        "batchRead": 22.365624999998545,
+        "batchInsert": 30.06891700000051,
+        "batchUpdate": 39.00391699999818,
+        "frequentRead": 71.60712499999863,
+        "frequentInsert": 73.02424999999857,
+        "frequentUpdate": 76.57487499999843,
+        "reopenMs": 51.34970799999792,
+        "files": 1,
+        "rawMB": 35.65568,
+        "compactedMB": 26.054656
+      },
+      {
+        "initMs": 536.7632920000033,
+        "batchRead": 24.113041999997222,
+        "batchInsert": 52.76820800000132,
+        "batchUpdate": 48.93549999999959,
+        "frequentRead": 71.52029100000073,
+        "frequentInsert": 71.64016699999775,
+        "frequentUpdate": 77.29841699999815,
+        "reopenMs": 50.67399999999907,
+        "files": 1,
+        "rawMB": 35.65568,
+        "compactedMB": 26.054656
+      }
+    ],
+    "SingleFileFS (relaxed + fpw=off)": [
+      {
+        "initMs": 536.9947919999977,
+        "batchRead": 24.414874999998574,
+        "batchInsert": 30.599417000001267,
+        "batchUpdate": 37.00212499999907,
+        "frequentRead": 72.36966700000266,
+        "frequentInsert": 73.3861250000009,
+        "frequentUpdate": 78.53112500000134,
+        "reopenMs": 51.022000000000844,
+        "files": 1,
+        "rawMB": 35.65568,
+        "compactedMB": 23.621632
+      },
+      {
+        "initMs": 534.2430839999979,
+        "batchRead": 24.145791999999346,
+        "batchInsert": 30.049291999999696,
+        "batchUpdate": 37.93950000000041,
+        "frequentRead": 72.16675000000032,
+        "frequentInsert": 73.2556250000016,
+        "frequentUpdate": 78.3638749999991,
+        "reopenMs": 50.41045899999881,
+        "files": 1,
+        "rawMB": 35.65568,
+        "compactedMB": 23.621632
+      },
+      {
+        "initMs": 526.383167,
+        "batchRead": 24.045665999998164,
+        "batchInsert": 29.18570799999725,
+        "batchUpdate": 35.91374999999971,
+        "frequentRead": 71.28695800000423,
+        "frequentInsert": 71.99170800000138,
+        "frequentUpdate": 77.43412499999977,
+        "reopenMs": 50.174542000000656,
+        "files": 1,
+        "rawMB": 35.65568,
+        "compactedMB": 23.621632
+      }
+    ],
+    "SingleFileFS lz4 (relaxed)": [
+      {
+        "initMs": 531.5259579999984,
+        "batchRead": 23.813125000000582,
+        "batchInsert": 31.561792000000423,
+        "batchUpdate": 45.02604099999735,
+        "frequentRead": 71.73700000000099,
+        "frequentInsert": 73.60412500000166,
+        "frequentUpdate": 77.78620900000169,
+        "reopenMs": 60.274083000000246,
+        "files": 1,
+        "rawMB": 17.829888,
+        "compactedMB": 17.28512
+      },
+      {
+        "initMs": 537.270875000002,
+        "batchRead": 23.646292000001267,
+        "batchInsert": 31.790249999998196,
+        "batchUpdate": 44.972499999999854,
+        "frequentRead": 71.81850000000122,
+        "frequentInsert": 72.81837499999892,
+        "frequentUpdate": 77.80541699999958,
+        "reopenMs": 61.39470799999981,
+        "files": 1,
+        "rawMB": 17.829888,
+        "compactedMB": 17.28512
+      },
+      {
+        "initMs": 523.547249999996,
+        "batchRead": 22.38658299999952,
+        "batchInsert": 31.780707999998413,
+        "batchUpdate": 45.00287499999831,
+        "frequentRead": 71.48254199999792,
+        "frequentInsert": 71.7229159999988,
+        "frequentUpdate": 77.57004199999938,
+        "reopenMs": 59.66258399999788,
+        "files": 1,
+        "rawMB": 17.829888,
+        "compactedMB": 17.28512
+      }
+    ]
+  }
+}

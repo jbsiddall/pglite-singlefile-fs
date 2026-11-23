@@ -34,7 +34,7 @@ const summary=workloads.map(workload=>{
 });
 const report={timestamp:new Date().toISOString(),repeats,environments,summary,records,warmups,notes:[
   'One complete excluded warm-up per backend. Fresh process/database per measured suite. Backend order alternates. Startup and verification excluded from operation-only times. Includes pending persistence flush.',
-  'Warm reads: working set fits PostgreSQL cache. 100 MiB configured page-cache budget: NodeFS PostgreSQL 100 MiB; singlefile PostgreSQL 98 MiB + redb 2 MiB. Adapter clean cache disabled. Not a total process RAM cap.',
+  'Warm reads: working set fits PostgreSQL cache. 100 MiB configured page-cache budget: NodeFS PostgreSQL 100 MiB; singlefile PostgreSQL 92 MiB + redb 8 MiB. Adapter clean cache disabled. Not a total process RAM cap.',
   'SingleFileFS redb Durability::Immediate versus upstream NodeFS PostgreSQL fsync=off. This is not equal hardware durability. OS cache not cleared; no NVMe-specific performance claim.',
   'All six workloads, raw samples and warm-ups retained; no performance gate or cherry-picked samples.'
 ]};

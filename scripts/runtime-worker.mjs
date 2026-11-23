@@ -8,6 +8,7 @@ import { PGlite } from '@electric-sql/pglite';
 import { ERRNO_CODES } from '@electric-sql/pglite/basefs';
 import { openNodeSync } from 'redb-js/node';
 import { SingleFileFS, checkpoint } from '../src/index.mjs';
+import { decodeChunkInto } from '../src/chunk-codec.mjs';
 
 const hash = bytes => createHash('sha256').update(bytes).digest('hex');
 const stage = (name, detail = {}) => console.log(JSON.stringify({ stage: name, ...detail }));
@@ -104,7 +105,7 @@ class GateFS extends SingleFileFS {
     if (this.gate) { const gate = this.gate; this.gate = null; gate.called.resolve(true); return gate.release.promise; }
     return super.waitForFlush();
   }
-  commitChanges() { if (this.failFlush) throw new Error('Injected flush failure'); return super.commitChanges(); }
+  commitChanges(...args) { if (this.failFlush) throw new Error('Injected flush failure'); return super.commitChanges(...args); }
 }
 
 async function durability(input, image) {
@@ -141,7 +142,7 @@ async function durability(input, image) {
   return { modes: 4, backgroundFailureObserved: true };
 }
 
-async function walCheckpoint(input, image) {
+async function coordinatedCheckpoint(input, image) {
   const fs = new SingleFileFS(image);
   const db = await PGlite.create({ fs });
   try {
@@ -151,8 +152,8 @@ async function walCheckpoint(input, image) {
     await fs.flush();
     // Strictly one single file even while open — zero WAL/SHM sidecar files.
     assert.deepEqual(readdirSync(dirname(image)), [basename(image)], 'redb container must stay strictly one single file');
-    const result = await checkpoint(db, fs, { mode: 'TRUNCATE' });
-    assert.equal(result.busy, 0, 'maintenance must not report a blocked checkpoint');
+    const result = await checkpoint(db, fs, { compact: true });
+    assert.equal(typeof result.compacted, 'boolean', 'checkpoint must report compaction result');
     assert.deepEqual(readdirSync(dirname(image)), [basename(image)], 'still strictly one single file after checkpoint');
     const after = (await db.query('SELECT checkpoint_lsn::text AS lsn FROM pg_control_checkpoint()')).rows[0].lsn;
     assert.notEqual(after, before, 'real PostgreSQL checkpoint advances checkpoint_lsn');
@@ -168,10 +169,22 @@ async function walCheckpoint(input, image) {
 }
 
 async function safety(input, image) {
-  for (const options of [{ durable: 'yes' }, { pageSize: 123 }, { redbCacheBytes: -1 }, { storage: 'invalid' }, { cacheBytes: -1 }]) {
+  for (const options of [
+    { durable: 'yes' },
+    { pageSize: 123 },
+    { redbCacheBytes: -1 },
+    { storage: 'invalid' },
+    { storage: 'opfs' },
+    { compression: 'invalid' },
+    { cacheBytes: -1 },
+  ]) {
     assert.throws(() => new SingleFileFS(image + '-invalid', options));
   }
   const fs = new SingleFileFS(image); fs.mkdir('/nested'); fs.writeFile('/nested/file', new Uint8Array([1, 2, 3]));
+  // H4: EBUSY must carry a defined numeric errno code (never undefined)
+  assert.throws(() => fs.rmdir('/'), err => typeof err.code === 'number' && err.code > 0);
+  assert.throws(() => fs.rename('/', '/x'), err => typeof err.code === 'number' && err.code > 0);
+
   const fd = fs.open('/nested/file'); fs.rename('/nested/file', '/nested/moved');
   assert.equal(fs.fstat(fd).size, 3, 'open descriptors retain inode across rename');
   assert.throws(() => fs.rmdir('/nested'), 'cannot remove nonempty directory');
@@ -189,13 +202,57 @@ async function safety(input, image) {
   fs.write(append, new Uint8Array([6]), 0, 1, 0);
   assert.equal(fs.fstat(append).size, 6, 'unlinked open descriptor remains writable');
   fs.writeFile('/nested/moved', new Uint8Array([8, 9])); fs.close(append);
+
+  // H2: ino >= 2^21 must never collide page 0 and page 1 keys
+  fs.nextIno = 0x200000;
+  const hiFd = fs.open('/hi-ino', 'w+');
+  const p0 = new Uint8Array(8192).fill(0xaa);
+  const p1 = new Uint8Array(8192).fill(0xbb);
+  fs.write(hiFd, p0, 0, 8192, 0);
+  fs.write(hiFd, p1, 0, 8192, 8192);
+  const checkHi = new Uint8Array(16384);
+  assert.equal(fs.read(hiFd, checkHi, 0, 16384, 0), 16384);
+  assert.equal(checkHi[0], 0xaa);
+  assert.equal(checkHi[8192], 0xbb);
+  fs.close(hiFd);
+
+  // H3: syncToFs() microtask race must never skip committing newly written dirty pages
+  fs.writeFile('/race-a', '1');
+  const relaxedFlush = fs.syncToFs(true);
+  await relaxedFlush;
+  fs.writeFile('/race-b', '2');
+  await fs.syncToFs(false);
+  assert.equal(fs.hasPendingChanges(), false, 'strict syncToFs(false) must commit all pending writes');
+
+  // M1: failed commit must not lose explicit utimes() on retry
+  fs.writeFile('/mtime-file', 'hello');
+  await fs.flush();
+  fs.utimes('/mtime-file', 123456, 123456);
+  const origBeginWrite = fs.store.beginWrite.bind(fs.store);
+  fs.store.beginWrite = () => { fs.store.beginWrite = origBeginWrite; throw new Error('transient commit failure'); };
+  assert.throws(() => fs.commitChanges(), /transient commit failure/);
+  await fs.flush();
+
   await fs.closeFs();
   const recovery = new SingleFileFS(image), recreated = recovery.open('/nested/moved');
   const replacement = new Uint8Array(2); assert.equal(recovery.read(recreated, replacement, 0, 2, 0), 2);
   assert.deepEqual([...replacement], [8, 9], 'same-name replacement survives orphan cleanup and reopen');
+  assert.equal(recovery.lstat('/mtime-file').mtime, 123456, 'explicit utimes preserved after transient commit failure');
+  const hiReopen = recovery.open('/hi-ino', 'r');
+  const hiOut = new Uint8Array(16384);
+  assert.equal(recovery.read(hiReopen, hiOut, 0, 16384, 0), 16384);
+  assert.equal(hiOut[0], 0xaa);
+  assert.equal(hiOut[8192], 0xbb);
+  recovery.close(hiReopen);
   recovery.close(recreated); await recovery.closeFs();
-  await assert.rejects(fs.checkpointWal('INVALID')); await fs.closeFs();
-  assert.throws(() => fs.lstat('/'), /closed/); await fs.closeFs();
+
+  // Closed FS guards & malformed chunk decoding (L1)
+  assert.throws(() => fs.lstat('/'), /closed/);
+  assert.throws(() => fs.mkdir('/after-close'), /closed/);
+  assert.throws(() => fs.mkdir('/'), /closed/);
+  await assert.rejects(fs.checkpointPostgres({ exec: async () => {} }, { compact: 'yes' }), /boolean/);
+  assert.throws(() => decodeChunkInto(new Uint8Array([2, 0x10, 0x41, 0x05, 0x00]), new Uint8Array(64), true), /Corrupt/);
+  assert.throws(() => decodeChunkInto(new Uint8Array([6, 0, 0, 1, 0, 0]), new Uint8Array(64), true), /Corrupt/);
   return { invalidOptionsRejected: true, renameDescriptorPreserved: true };
 }
 
@@ -231,12 +288,31 @@ async function identity(input, image) {
   assert.throws(() => new SingleFileFS(collisionPath), /container|recogniz|format|root/i);
   assert.equal(hash(readFileSync(collisionPath)), collisionHash, 'collision redb file must remain byte-for-byte unchanged');
 
-  // 4. Memory <-> Node.js byte-for-byte image portability & mixed chunk codecs (zerobytemask / bitsparse32 / bitsparse16 / lz4 / none).
+  // 3b. Uncleanly closed (crashed) foreign redb database triggering "Repair aborted" must remain byte-for-byte unchanged (H1).
+  const crashedForeignPath = image + '-crashed-foreign-redb';
+  const liveForeign = openNodeSync(crashedForeignPath);
+  liveForeign.set('secret_app', 'k', 'do-not-modify');
+  // Snapshot file bytes while liveForeign is still open (simulating SIGKILL unclean shutdown)
+  const crashedCopyPath = image + '-crashed-foreign-copy';
+  writeFileSync(crashedCopyPath, readFileSync(crashedForeignPath));
+  liveForeign.close();
+  const origCrashedHash = hash(readFileSync(crashedCopyPath));
+  assert.throws(() => new SingleFileFS(crashedCopyPath), /container|recogniz|schema|format/i);
+  assert.equal(hash(readFileSync(crashedCopyPath)), origCrashedHash, 'unclean foreign redb file must remain byte-for-byte unchanged');
+
+  // 4. Memory <-> Node.js byte-for-byte image portability, TAG_PGHOLE, TAG_SPLIT (>8170 B), & all chunk codecs.
   const memFs = await SingleFileFS.open(':memory:', { compression: 'zerobytemask' });
-  const pgLike = new Uint8Array(16384);
-  pgLike.set([1, 2, 3, 4, 5, 6, 7, 8], 0);
-  pgLike.set([9, 10, 11, 12, 13, 14, 15, 16], 8100);
-  pgLike.set(new TextEncoder().encode('repeat-'.repeat(400)), 8192);
+  const pgLike = new Uint8Array(24576);
+  // Page 0: Realistic PostgreSQL 8 KiB page with 0x2004 signature + dense suffix -> exercises TAG_PGHOLE
+  pgLike[12] = 0x80; pgLike[13] = 0x00; // pd_lower = 128
+  pgLike[14] = 0x00; pgLike[15] = 0x10; // pd_upper = 4096
+  pgLike[18] = 0x04; pgLike[19] = 0x20; // pd_pagesize_version = 0x2004
+  for (let i = 24; i < 128; i++) pgLike[i] = (i * 37) | 1;
+  for (let i = 4096; i < 8192; i++) pgLike[i] = ((i * 73) ^ (i >>> 3)) | 1;
+  // Page 1: Full incompressible 8 KiB page (no zeros -> 8193 B > 8170 B cliff) -> exercises TAG_SPLIT
+  for (let i = 8192; i < 16384; i++) pgLike[i] = ((i * 131 + 17) & 0xfe) | 1;
+  // Page 2: Repetitive text -> exercises LZ4 & sparse codecs
+  pgLike.set(new TextEncoder().encode('repeat-'.repeat(400)), 16384);
   memFs.writeFile('/zerobytemask', pgLike);
   await memFs.closeFs();
   const exported = memFs.exportBytes();
@@ -252,9 +328,14 @@ async function identity(input, image) {
   const verifyFs = new SingleFileFS(portablePath);
   for (const p of ['/zerobytemask', '/bitsparse32', '/bitsparse16', '/lz4', '/none']) {
     const fd = verifyFs.open(p);
+    // Multi-page scanEach read across TAG_PGHOLE + TAG_SPLIT + sparse pages
     const out = new Uint8Array(pgLike.length);
     assert.equal(verifyFs.read(fd, out, 0, out.length, 0), pgLike.length);
     assert.equal(hash(out), hash(pgLike));
+    // Single-page aligned read on TAG_SPLIT page (page 1)
+    const singleSplit = new Uint8Array(8192);
+    assert.equal(verifyFs.read(fd, singleSplit, 0, 8192, 8192), 8192);
+    assert.equal(hash(singleSplit), hash(pgLike.subarray(8192, 16384)));
     verifyFs.close(fd);
   }
   integrity(verifyFs);
@@ -301,7 +382,7 @@ let source = '';
 for await (const chunk of process.stdin) source += chunk;
 const input = JSON.parse(source), dir = input.mode === 'crash' ? null : mkdtempSync(tmpdir() + '/pglite-singlefile-test-');
 try {
-  const operations = { property: propertyTrace, lifecycle, durability, checkpoint: walCheckpoint, safety, identity, crash };
+  const operations = { property: propertyTrace, lifecycle, durability, checkpoint: coordinatedCheckpoint, safety, identity, crash };
   assert.ok(operations[input.mode], 'Known worker mode required');
   stage('runtime', { runtime: typeof Bun !== 'undefined' ? 'bun' : typeof Deno !== 'undefined' ? 'deno' : 'node', version: typeof Bun !== 'undefined' ? Bun.version : typeof Deno !== 'undefined' ? Deno.version.deno : process.version });
   const result = await operations[input.mode](input, dir + '/database.pglite');

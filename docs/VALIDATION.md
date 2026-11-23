@@ -29,7 +29,7 @@ The follow-up worker-setup abort diagnostic and PGlite `abort` frame also reprod
 
 - [Six-operation Node LTS report](benchmarks/node24-linux-x64.json): five measured suites per backend, all workloads and warm-ups retained.
 - [Large-database report](benchmarks/node24-linux-x64-large.json): both backends reached 5.006 GiB of PostgreSQL relation storage; join plans and physical sizes retained.
-- The README includes hosted results as well as local results, the slower Bun write cases, unequal default hardware durability, the 1.60× large unindexed join ratio, and the 1.69× storage amplification.
+- At v0.1.0, the README included hosted results as well as local results, the slower Bun write cases, unequal default hardware durability, the 1.60× large unindexed join ratio, and the 1.69× storage amplification.
 
 ## Release status
 

@@ -1,18 +1,20 @@
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
-import { mkdtempSync, rmSync, statSync, readFileSync } from 'node:fs';
+import { mkdtempSync, rmSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
+import { dirname, basename } from 'node:path';
+import { setImmediate } from 'node:timers';
 import { PGlite } from '@electric-sql/pglite';
 import { ERRNO_CODES } from '@electric-sql/pglite/basefs';
+import { openNodeSync } from 'redb-js/node';
 import { SingleFileFS, checkpoint } from '../src/index.mjs';
-import { openDatabase } from '../src/sqlite.mjs';
 
 const hash = bytes => createHash('sha256').update(bytes).digest('hex');
 const stage = (name, detail = {}) => console.log(JSON.stringify({ stage: name, ...detail }));
 const immediate = () => new Promise(resolve => setImmediate(resolve));
 const deferred = () => { let resolve; const promise = new Promise(r => { resolve = r; }); return { promise, resolve }; };
 const idle = async fs => { for (let i = 0; i < 3; i++) { await immediate(); await fs.flush(); } };
-const integrity = fs => assert.equal(fs.store.prepare('PRAGMA integrity_check').get().integrity_check, 'ok');
+const integrity = fs => assert.equal(fs.checkIntegrity(), true);
 const paths = ['/case/a', '/case/b', '/case/c'];
 const exists = (fs, path) => { try { fs.lstat(path); return true; } catch (error) { if (error.code === ERRNO_CODES.ENOENT) return false; throw error; } };
 
@@ -28,8 +30,8 @@ async function propertyTrace(input, image) {
         const source = new Uint8Array(op.offset + op.length + 7).fill(0x7d);
         for (let i = 0; i < op.length; i++) source[op.offset + i] = (op.byte + i * op.salt) & 255;
         const fd = fs.open(path);
-        const input = op.arrayBuffer ? source.buffer : op.signedView ? new Int8Array(source.buffer) : source;
-        assert.equal(fs.write(fd, input, op.offset, op.length, op.position), op.length);
+        const data = op.arrayBuffer ? source.buffer : op.signedView ? new Int8Array(source.buffer) : source;
+        assert.equal(fs.write(fd, data, op.offset, op.length, op.position), op.length);
         fs.close(fd);
       } else if (op.kind === 'truncate') {
         if (!exists(fs, path)) fs.writeFile(path, new Uint8Array());
@@ -106,11 +108,12 @@ class GateFS extends SingleFileFS {
 }
 
 async function durability(input, image) {
-  for (const journalMode of ['DELETE', 'WAL']) for (const relaxed of [false, true]) {
-    const filename = image + '-' + journalMode + '-' + relaxed, fs = new GateFS(filename, { journalMode });
+  for (const durable of [true, false]) for (const relaxed of [false, true]) {
+    const filename = image + '-' + durable + '-' + relaxed;
+    const fs = new GateFS(filename, { durable });
     const db = await PGlite.create({ fs, relaxedDurability: relaxed });
     await db.exec('CREATE TABLE durable(id INT PRIMARY KEY)'); await idle(fs);
-    assert.equal(fs.store.prepare('PRAGMA synchronous').get().synchronous, journalMode === 'WAL' ? 2 : 3);
+    assert.equal(fs.durable, durable);
     fs.resetCounters(); const gate = fs.arm(); let queryDone = false;
     const query = db.query('INSERT INTO durable VALUES (1)').then(() => { queryDone = true; });
     assert.equal(await gate.called.promise, relaxed); await immediate();
@@ -123,10 +126,10 @@ async function durability(input, image) {
       await immediate(); assert.equal(closeDone, false, 'close drains pending relaxed persistence');
       gate.release.resolve(); await closing;
     }
-    const reopenedFs = new SingleFileFS(filename, { journalMode });
+    const reopenedFs = new SingleFileFS(filename, { durable });
     const reopened = await PGlite.create({ fs: reopenedFs, relaxedDurability: relaxed });
     assert.deepEqual((await reopened.query('SELECT * FROM durable')).rows, [{ id: 1 }]);
-    await reopened.close(); stage('durability-mode', { journalMode, relaxed });
+    await reopened.close(); stage('durability-mode', { durable, relaxed });
   }
   const fs = new GateFS(image + '-failure'), db = await PGlite.create({ fs, relaxedDurability: true });
   await db.exec('CREATE TABLE fail_test(id INT)'); await idle(fs);
@@ -139,20 +142,21 @@ async function durability(input, image) {
 }
 
 async function walCheckpoint(input, image) {
-  const fs = new SingleFileFS(image, { walAutoCheckpointBytes: 512 * 1024 * 1024 });
+  const fs = new SingleFileFS(image);
   const db = await PGlite.create({ fs });
   try {
     await db.exec('CREATE TABLE checkpoint_rows(id INT PRIMARY KEY, payload TEXT NOT NULL)');
     const before = (await db.query('SELECT checkpoint_lsn::text AS lsn FROM pg_control_checkpoint()')).rows[0].lsn;
     await db.exec("INSERT INTO checkpoint_rows SELECT i, repeat('payload-' || i::text,100) FROM generate_series(1,3000) i");
     await fs.flush();
-    assert.ok(statSync(image + '-wal').size > 0, 'container WAL must have frames before maintenance');
+    // Strictly one single file even while open — zero WAL/SHM sidecar files.
+    assert.deepEqual(readdirSync(dirname(image)), [basename(image)], 'redb container must stay strictly one single file');
     const result = await checkpoint(db, fs, { mode: 'TRUNCATE' });
     assert.equal(result.busy, 0, 'maintenance must not report a blocked checkpoint');
-    assert.equal(statSync(image + '-wal').size, 0, 'coordinated maintenance truncates SQLite WAL');
+    assert.deepEqual(readdirSync(dirname(image)), [basename(image)], 'still strictly one single file after checkpoint');
     const after = (await db.query('SELECT checkpoint_lsn::text AS lsn FROM pg_control_checkpoint()')).rows[0].lsn;
     assert.notEqual(after, before, 'real PostgreSQL checkpoint advances checkpoint_lsn');
-    integrity(fs); stage('coordinated-checkpoint', { before, after, sqlite: result });
+    integrity(fs); stage('coordinated-checkpoint', { before, after, container: result });
   } finally { await db.close(); }
   const reopenedFs = new SingleFileFS(image), reopened = await PGlite.create({ fs: reopenedFs });
   try {
@@ -164,7 +168,7 @@ async function walCheckpoint(input, image) {
 }
 
 async function safety(input, image) {
-  for (const options of [{ durable: true, journalMode: 'MEMORY' }, { pageSize: 123 }, { sqliteCacheKiB: -1 }, { lockingMode: 'INVALID' }]) {
+  for (const options of [{ durable: 'yes' }, { pageSize: 123 }, { redbCacheBytes: -1 }, { storage: 'invalid' }, { cacheBytes: -1 }]) {
     assert.throws(() => new SingleFileFS(image + '-invalid', options));
   }
   const fs = new SingleFileFS(image); fs.mkdir('/nested'); fs.writeFile('/nested/file', new Uint8Array([1, 2, 3]));
@@ -196,62 +200,100 @@ async function safety(input, image) {
 }
 
 async function identity(input, image) {
-  const foreign = openDatabase(image + '-foreign');
-  foreign.exec("CREATE TABLE important(value TEXT); INSERT INTO important VALUES ('keep me'); PRAGMA user_version=7;");
-  const beforePragmas = ['application_id', 'user_version', 'page_size', 'journal_mode'].map(name => foreign.prepare('PRAGMA ' + name).get());
-  const beforeSchema = foreign.prepare('SELECT type,name,sql FROM sqlite_schema ORDER BY name').all().map(row => ({ ...row }));
-  foreign.close(); const originalBytes = hash(readFileSync(image + '-foreign'));
-  assert.throws(() => new SingleFileFS(image + '-foreign'), /SQLite|container|recogniz|schema|format/i);
-  assert.equal(hash(readFileSync(image + '-foreign')), originalBytes, 'foreign SQLite file must remain byte-for-byte unchanged');
-  const check = openDatabase(image + '-foreign');
-  assert.deepEqual(check.prepare('SELECT * FROM important').all().map(row => ({ ...row })), [{ value: 'keep me' }]);
-  assert.deepEqual(check.prepare('SELECT type,name,sql FROM sqlite_schema ORDER BY name').all().map(row => ({ ...row })), beforeSchema);
-  assert.deepEqual(['application_id', 'user_version', 'page_size', 'journal_mode'].map(name => check.prepare('PRAGMA ' + name).get()), beforePragmas);
+  // 1. Foreign non-redb binary file (e.g. a SQLite header) must remain byte-for-byte unchanged.
+  const foreignBinary = image + '-foreign-sqlite';
+  writeFileSync(foreignBinary, Buffer.from('SQLite format 3\0important-user-data-do-not-touch'));
+  const origBinHash = hash(readFileSync(foreignBinary));
+  assert.throws(() => new SingleFileFS(foreignBinary), /container|format|header/i);
+  assert.equal(hash(readFileSync(foreignBinary)), origBinHash, 'foreign non-redb file must remain byte-for-byte unchanged');
+
+  // 2. Foreign redb database with unrelated tables must remain byte-for-byte unchanged.
+  const foreignRedb = image + '-foreign-redb';
+  const foreignDb = openNodeSync(foreignRedb);
+  foreignDb.set('important', 'key', 'keep me');
+  foreignDb.close();
+  const origRedbHash = hash(readFileSync(foreignRedb));
+  assert.throws(() => new SingleFileFS(foreignRedb), /container|recogniz|schema|format/i);
+  assert.equal(hash(readFileSync(foreignRedb)), origRedbHash, 'foreign redb file must remain byte-for-byte unchanged');
+  const check = openNodeSync(foreignRedb, { readOnly: true });
+  assert.equal(check.getText('important', 'key'), 'keep me');
   check.close();
-  const legacy = openDatabase(image + '-legacy');
-  legacy.exec(`CREATE TABLE nodes(ino INTEGER PRIMARY KEY,path TEXT UNIQUE,mode INTEGER NOT NULL,size INTEGER NOT NULL DEFAULT 0,mtime INTEGER NOT NULL);
-    CREATE TABLE chunks(ino INTEGER NOT NULL,page INTEGER NOT NULL,data BLOB NOT NULL,PRIMARY KEY(ino,page));
-    INSERT INTO nodes(path,mode,mtime) VALUES ('/',16832,0);`);
-  legacy.close();
-  const collision = openDatabase(image + '-collision');
-  collision.exec(`CREATE TABLE nodes(ino INTEGER PRIMARY KEY,path TEXT UNIQUE,mode INTEGER NOT NULL,size INTEGER NOT NULL DEFAULT 0,mtime INTEGER NOT NULL);
-    CREATE TABLE chunks(ino INTEGER NOT NULL,page INTEGER NOT NULL,data BLOB NOT NULL,PRIMARY KEY(ino,page));
-    INSERT INTO nodes(path,mode,mtime) VALUES (NULL,33152,0);`);
-  collision.close(); const collisionBytes = hash(readFileSync(image + '-collision'));
-  assert.throws(() => new SingleFileFS(image + '-collision'), /SQLite|container|recogniz|schema|format|root/i);
-  assert.equal(hash(readFileSync(image + '-collision')), collisionBytes, 'matching schema without a valid root is not a legacy container');
-  const collisionCheck = openDatabase(image + '-collision');
-  assert.equal(collisionCheck.prepare('SELECT count(*) AS n FROM nodes WHERE path IS NULL').get().n, 1);
-  collisionCheck.close();
-  const fs = new SingleFileFS(image + '-legacy');
-  fs.writeFile('/legacy', new Uint8Array([11, 12])); await fs.closeFs();
-  const reopened = new SingleFileFS(image + '-legacy'), fd = reopened.open('/legacy'), bytes = new Uint8Array(2);
-  assert.equal(reopened.read(fd, bytes, 0, 2, 0), 2); assert.deepEqual([...bytes], [11, 12]);
-  integrity(reopened); reopened.close(fd); await reopened.closeFs();
-  return { foreignDatabaseUnchanged: true, legacyImageAccepted: true };
+
+  // 3. redb database with matching table names but invalid format/root must be rejected unchanged.
+  const collisionPath = image + '-collision';
+  const collisionDb = openNodeSync(collisionPath);
+  collisionDb.writeTransaction(tx => {
+    tx.set('meta', 'format', JSON.stringify({ magic: 'WRONG', version: 2, pageSize: 8192 }));
+    tx.set('nodes', new Uint8Array([0, 0, 0, 1]), JSON.stringify({ ino: 1, path: null, mode: 33152, size: 0, mtime: 0 }));
+  });
+  collisionDb.close();
+  const collisionHash = hash(readFileSync(collisionPath));
+  assert.throws(() => new SingleFileFS(collisionPath), /container|recogniz|format|root/i);
+  assert.equal(hash(readFileSync(collisionPath)), collisionHash, 'collision redb file must remain byte-for-byte unchanged');
+
+  // 4. Memory <-> Node.js byte-for-byte image portability & mixed chunk codecs (zerobytemask / bitsparse32 / bitsparse16 / lz4 / none).
+  const memFs = await SingleFileFS.open(':memory:', { compression: 'zerobytemask' });
+  const pgLike = new Uint8Array(16384);
+  pgLike.set([1, 2, 3, 4, 5, 6, 7, 8], 0);
+  pgLike.set([9, 10, 11, 12, 13, 14, 15, 16], 8100);
+  pgLike.set(new TextEncoder().encode('repeat-'.repeat(400)), 8192);
+  memFs.writeFile('/zerobytemask', pgLike);
+  await memFs.closeFs();
+  const exported = memFs.exportBytes();
+  const portablePath = image + '-portable';
+  writeFileSync(portablePath, exported);
+
+  for (const codec of ['bitsparse32', 'bitsparse16', 'lz4', 'none']) {
+    const fsCodec = new SingleFileFS(portablePath, { compression: codec });
+    fsCodec.writeFile('/' + codec, pgLike);
+    await fsCodec.closeFs();
+  }
+
+  const verifyFs = new SingleFileFS(portablePath);
+  for (const p of ['/zerobytemask', '/bitsparse32', '/bitsparse16', '/lz4', '/none']) {
+    const fd = verifyFs.open(p);
+    const out = new Uint8Array(pgLike.length);
+    assert.equal(verifyFs.read(fd, out, 0, out.length, 0), pgLike.length);
+    assert.equal(hash(out), hash(pgLike));
+    verifyFs.close(fd);
+  }
+  integrity(verifyFs);
+  await verifyFs.closeFs();
+  return { foreignDatabaseUnchanged: true, portableImageAccepted: true };
 }
 
 async function crash(input) {
-  const size = 1024 * 1024, fs = new SingleFileFS(input.image, { journalMode: input.journalMode });
-  if (input.action === 'seed') { fs.writeFile('/file', new Uint8Array(size).fill(0x11)); await fs.closeFs(); return { seeded: true }; }
+  const size = 1024 * 1024;
+  const fs = new SingleFileFS(input.image, { durable: true });
+  if (input.action === 'seed') {
+    fs.writeFile('/file', new Uint8Array(size).fill(0x11));
+    await fs.closeFs();
+    assert.deepEqual(readdirSync(dirname(input.image)), [basename(input.image)]);
+    return { seeded: true };
+  }
   if (input.action === 'verify') {
+    assert.deepEqual(readdirSync(dirname(input.image)), [basename(input.image)]);
     const fd = fs.open('/file'), out = new Uint8Array(size);
     assert.equal(fs.read(fd, out, 0, size, 0), size);
     assert.ok(out.every(x => x === (input.commit ? 0x33 : 0x11)), 'recovery preserves committed bytes only');
-    fs.close(fd); integrity(fs); await fs.closeFs(); return { integrity: 'ok', recoveredCommit: input.commit };
+    fs.close(fd); integrity(fs); await fs.closeFs();
+    return { integrity: 'ok', recoveredCommit: input.commit };
   }
-  fs.store.exec('PRAGMA cache_size=8');
   const fd = fs.open('/file'), data = new Uint8Array(size).fill(input.commit ? 0x33 : 0x22);
   fs.write(fd, data, 0, size, 0);
   if (!input.commit) {
-    const put = fs.sql.put, original = put.run.bind(put); let calls = 0;
-    fs.sql.put = { run(...args) {
-      const result = original(...args);
-      if (++calls === 30) { stage('kill-ready', { committed: false }); Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0); }
-      return result;
-    } };
+    const original = fs._writeChunk.bind(fs);
+    let calls = 0;
+    fs._writeChunk = (tx, ino, page, chunk) => {
+      original(tx, ino, page, chunk);
+      if (++calls === 30) {
+        stage('kill-ready', { committed: false });
+        Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0);
+      }
+    };
   }
-  await fs.syncToFs(false); stage('kill-ready', { committed: true });
+  await fs.syncToFs(false);
+  stage('kill-ready', { committed: true });
   Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0);
 }
 

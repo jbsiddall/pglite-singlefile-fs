@@ -1,14 +1,24 @@
 {
   "name": "pglite-singlefile-fs",
   "version": "0.1.1",
-  "description": "Single-file virtual filesystem for PGlite. Portable embedded PostgreSQL on Node.js, Bun and Deno.",
+  "description": "Single-file virtual filesystem for PGlite powered by redb WASM. Portable embedded PostgreSQL on Node.js, Bun, Deno, and Browser OPFS.",
   "type": "module",
   "main": "./src/index.mjs",
   "types": "./src/index.d.ts",
   "exports": {
     ".": {
+      "browser": {
+        "types": "./src/index.d.ts",
+        "import": "./src/browser.mjs"
+      },
+      "default": {
+        "types": "./src/index.d.ts",
+        "import": "./src/index.mjs"
+      }
+    },
+    "./browser": {
       "types": "./src/index.d.ts",
-      "import": "./src/index.mjs"
+      "import": "./src/browser.mjs"
     }
   },
   "files": [
@@ -18,7 +28,7 @@
   ],
   "sideEffects": false,
   "engines": {
-    "node": ">=22.13.0"
+    "node": ">=18.0.0"
   },
   "repository": {
     "type": "git",
@@ -41,10 +51,14 @@
     "build": "tsc --noEmit",
     "test": "vitest run",
     "test:ci": "vitest run",
+    "test:browser": "node scripts/browser-pglite-test.mjs",
     "bench": "vitest bench --run",
     "bench:ci": "vitest bench --run && node scripts/benchmark-run.mjs && node scripts/benchmark-report.mjs",
     "bench:sample": "node scripts/benchmark-run.mjs && node scripts/benchmark-report.mjs",
     "bench:big": "node scripts/big-benchmark.mjs && node scripts/benchmark-report.mjs reports/benchmark-large-results.json reports/benchmark-large-report.html"
+  },
+  "dependencies": {
+    "redb-js": "git+https://github.com/jbsiddall/redb-js.git"
   },
   "peerDependencies": {
     "@electric-sql/pglite": "^0.5.8"

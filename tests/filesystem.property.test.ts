@@ -64,8 +64,8 @@ describe(`independent filesystem model (${runtime})`, () => {
       verbose: true,
     });
   }, 180_000);
-  it('protects unrelated SQLite databases and accepts recognized legacy container images', async () => {
-    expect(await runWorker({ mode: 'identity' })).toEqual({ foreignDatabaseUnchanged: true, legacyImageAccepted: true });
+  it('protects foreign files and accepts portable redb container images', async () => {
+    expect(await runWorker({ mode: 'identity' })).toEqual({ foreignDatabaseUnchanged: true, portableImageAccepted: true });
   });
   it('rejects unsafe options and preserves file descriptors through rename', async () => {
     expect(await runWorker({ mode: 'safety' })).toEqual({ invalidOptionsRejected: true, renameDescriptorPreserved: true });

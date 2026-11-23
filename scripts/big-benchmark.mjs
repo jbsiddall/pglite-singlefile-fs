@@ -53,20 +53,19 @@ for(const backend of (process.env.BIG_BENCH_CHILD?[process.env.BIG_BENCH_CHILD]:
   const root=mkdtempSync(join(process.env.BIG_BENCH_TMPDIR??tmpdir(),'pglite-large-'));
   let db,fs;
   try {
-    fs=backend==='singlefile'?new SingleFileFS(join(root,'database.pglite'),{durable:true,journalMode:'WAL',sqliteCacheKiB:2048,cacheBytes:0,pageSize:8192,chunkTable:'rowid'}):null;
+    fs=backend==='singlefile'?new SingleFileFS(join(root,'database.pglite'),{durable:true,redbCacheBytes:2*1024*1024,cacheBytes:0,pageSize:8192}):null;
     const startParams=[...PGlite.defaultStartParams,'-c',`shared_buffers=${fs?98:100}MB`,'-c','work_mem=32MB'];
     db=fs?await PGlite.create({fs,startParams}):await PGlite.create(join(root,'pgdata'),{startParams});
     environments[backend]={runtime,runtimeFlags:process.env.JSC_useWasmOSR===undefined?{}:{JSC_useWasmOSR:process.env.JSC_useWasmOSR},platform:process.platform,arch:process.arch,cpu:cpus()[0]?.model,settings:(await db.query("SELECT name,setting FROM pg_settings WHERE name IN ('fsync','shared_buffers','work_mem') ORDER BY name")).rows};
     // Exactly two application tables. Random payload resists PostgreSQL TOAST compression.
     await db.exec('CREATE TABLE customers(id bigint PRIMARY KEY, label text NOT NULL); CREATE TABLE events(id bigint NOT NULL, customer_id bigint NOT NULL, amount integer NOT NULL, payload text NOT NULL)');
     await db.query("INSERT INTO customers SELECT g,'customer-'||g FROM generate_series(1,10000)g");
-    let rows=0,relationBytes=0,peakObservedLoadingStorageBytes=directorySize(root),peakObservedLoadingSqliteWalBytes=0;
+    let rows=0,relationBytes=0,peakObservedLoadingStorageBytes=directorySize(root);
     const loadStart=performance.now();
     while(relationBytes<targetBytes) {
       await db.query(`INSERT INTO events SELECT g,1+(g%10000),g%1000,$3::text FROM generate_series($1::bigint,$2::bigint)g`,[rows+1,rows+batch,payload]);
       rows+=batch;
       peakObservedLoadingStorageBytes=Math.max(peakObservedLoadingStorageBytes,directorySize(root));
-      if(fs){try{peakObservedLoadingSqliteWalBytes=Math.max(peakObservedLoadingSqliteWalBytes,statSync(join(root,'database.pglite-wal')).size);}catch(error){if(error.code!=='ENOENT')throw error;}}
       relationBytes=Number((await db.query("SELECT (pg_total_relation_size('events')+pg_total_relation_size('customers'))::text AS bytes")).rows[0].bytes);
       if(rows%(batch*10)===0)console.log(JSON.stringify({backend,progressRows:rows,relationBytes,targetBytes}));
     }
@@ -93,7 +92,7 @@ for(const backend of (process.env.BIG_BENCH_CHILD?[process.env.BIG_BENCH_CHILD]:
     const persistedPayload=(await db.query('SELECT payload FROM events WHERE id=1')).rows[0].payload;
     assert.equal(persistedPayload.length,payloadBytes);assert.equal(persistedPayload,payload);
     await db.close();db=null;
-    records.push({backend,payloadHash,peakObservedLoadingStorageBytes,peakObservedLoadingSqliteWalBytes,targetBytes,rows,relationBytes,loadMs,indexMs,bytesBeforeIndex,imageBeforeIndex,closedBytes:directorySize(root),samples,planWithout,planWith});
+    records.push({backend,payloadHash,peakObservedLoadingStorageBytes,targetBytes,rows,relationBytes,loadMs,indexMs,bytesBeforeIndex,imageBeforeIndex,closedBytes:directorySize(root),samples,planWithout,planWith});
     console.log(JSON.stringify(records.at(-1)));
   }finally{if(db)await db.close();rmSync(root,{recursive:true,force:true});}
 }
@@ -107,7 +106,7 @@ const report={timestamp:new Date().toISOString(),repeats:repetitions,environment
   'No event join-key index in first phase; indexed customers and indexed events in second. Explicit plans saved. Same selective customer join avoids a pathological Cartesian join.',
   'One excluded warm-up per join phase. OS cache not cleared. Backends run sequentially once, so environmental/order effects remain; not a cross-machine performance guarantee.',
   'Payload is one cryptographically random base64 value reused across rows, resisting per-value PostgreSQL compression; storage layers do not deduplicate it. Joins read keys/amounts, not the complete payload: this checks large database operation, not a full 5 GiB payload scan.',
-  '100 MiB configured page-cache budget, not a total RAM cap. NodeFS fsync=off versus SQLite synchronous=FULL; hardware durability differs.'
+  '100 MiB configured page-cache budget, not a total RAM cap. NodeFS fsync=off versus redb Durability::Immediate; hardware durability differs.'
 ]};
 progress.status='completed';saveProgress();
 mkdirSync('reports',{recursive:true});writeFileSync('reports/benchmark-large-results.json',JSON.stringify(report,null,2));console.table(summary);

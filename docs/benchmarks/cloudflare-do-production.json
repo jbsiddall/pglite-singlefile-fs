@@ -1,0 +1,232 @@
+{
+  "date": "2026-10-19",
+  "baseCommit": "c3efa4fda8166c7e2c772d11b4b32305abd53a1e",
+  "runtime": {
+    "pglite": "0.5.8",
+    "postgresql": "18.3",
+    "nodeClient": "24.19.0",
+    "compatibilityDate": "2026-10-01",
+    "compatibilityFlags": [
+      "nodejs_compat"
+    ],
+    "observedCloudflareColo": "ORD"
+  },
+  "deployment": {
+    "realCloudflare": true,
+    "authentication": "Cloudflare Access service token plus Worker bearer secret",
+    "seed": {
+      "nodes": 998,
+      "chunks": 3712
+    },
+    "temporaryServiceAuthRemoved": true,
+    "accountDenyUnmatchedRequestsAfterCleanup": true
+  },
+  "variant": {
+    "startParamsAppended": [
+      "-c",
+      "shared_buffers=16MB",
+      "-c",
+      "work_mem=1MB",
+      "-c",
+      "maintenance_work_mem=16MB",
+      "-c",
+      "max_connections=10"
+    ],
+    "otherChanges": "Timed trial included an authenticated error-stack diagnostic. Final clean source was subsequently deployed without it."
+  },
+  "startup": {
+    "defaultSettings": {
+      "httpStatus": 400,
+      "error": "RangeError: Invalid typed array length: 197722112"
+    },
+    "reducedBuffers": {
+      "httpStatus": 200,
+      "query": "SELECT version() AS version",
+      "clientElapsedMs": 1197
+    },
+    "interpretation": "First successful query after deployment, including proxy, network and Access overhead; not an isolated engine cold-start measurement."
+  },
+  "localMemoryControl": {
+    "defaultHeapBytes": [
+      134217728,
+      164757504,
+      197722112
+    ],
+    "reducedBuffersHeapBytes": [
+      134217728
+    ],
+    "initialMemory64MiB": "LinkError: imported memory is smaller than the WASM binary minimum of 2048 pages",
+    "interpretation": "Local controls identify a matching heap-growth size. Production returned a handled RangeError; no exceededMemory outcome was observed and exact production memory usage was not measured.",
+    "capturedRuns": [
+      {
+        "mode": "default",
+        "exitCode": 0,
+        "output": "{\"node\":\"v24.19.0\",\"mode\":\"default\"}\n{\"event\":\"grow\",\"before\":134217728,\"requestedAdditionalBytes\":30539776}\n{\"event\":\"grow\",\"before\":164757504,\"requestedAdditionalBytes\":32964608}\n{\"event\":\"ready\",\"wasmMemoryBytes\":197722112}\n{\"event\":\"query\",\"rows\":[{\"ok\":1}]}\n{\"event\":\"settings\",\"rows\":[{\"name\":\"maintenance_work_mem\",\"setting\":\"65536\",\"unit\":\"kB\"},{\"name\":\"max_connections\",\"setting\":\"100\",\"unit\":null},{\"name\":\"shared_buffers\",\"setting\":\"16384\",\"unit\":\"8kB\"},{\"name\":\"work_mem\",\"setting\":\"4096\",\"unit\":\"kB\"}]}\n"
+      },
+      {
+        "mode": "small",
+        "exitCode": 1,
+        "output": "{\"node\":\"v24.19.0\",\"mode\":\"small\"}\nnode:internal/process/promises:394\n    triggerUncaughtException(err, true /* fromPromise */);\n    ^\n\n[LinkError: WebAssembly.instantiate(): Import #134 \"env\" \"memory\": memory import has 1024 pages which is smaller than the declared initial of 2048]\n\nNode.js v24.19.0\n"
+      },
+      {
+        "mode": "tuned",
+        "exitCode": 0,
+        "output": "{\"node\":\"v24.19.0\",\"mode\":\"tuned\"}\n{\"event\":\"ready\",\"wasmMemoryBytes\":134217728}\n{\"event\":\"query\",\"rows\":[{\"ok\":1}]}\n{\"event\":\"settings\",\"rows\":[{\"name\":\"maintenance_work_mem\",\"setting\":\"16384\",\"unit\":\"kB\"},{\"name\":\"max_connections\",\"setting\":\"10\",\"unit\":null},{\"name\":\"shared_buffers\",\"setting\":\"2048\",\"unit\":\"8kB\"},{\"name\":\"work_mem\",\"setting\":\"1024\",\"unit\":\"kB\"}]}\n"
+      }
+    ]
+  },
+  "benchmarkConditions": {
+    "script": "examples/bench.mjs",
+    "runs": 1,
+    "timing": "Client-side elapsed fetch time through the managed environment proxy and Cloudflare Access",
+    "warmup": "Engine already initialized with SELECT version; table drop/create precede timed workloads",
+    "durability": "DurableObjectStore with ctx.storage.transactionSync; metadata and pages deferred together",
+    "limitations": [
+      "One suite; bulk operations each have one sample.",
+      "Queries ran under production memory enforcement, but this does not prove a memory margin or arbitrary workload safety.",
+      "Request latency does not isolate Durable Object commit latency.",
+      "No Neon comparison.",
+      "No power-loss/crash-recovery guarantee."
+    ]
+  },
+  "benchmark": {
+    "label": "cloudflare-do-reduced-buffers",
+    "results": {
+      "insert_single_x100": {
+        "n": 100,
+        "medianMs": 76.76,
+        "p95Ms": 155.18,
+        "totalMs": 9348.2,
+        "rowsRead": 203,
+        "rowsWritten": 206
+      },
+      "insert_bulk_20000_rows": {
+        "n": 1,
+        "medianMs": 529.96,
+        "p95Ms": 529.96,
+        "totalMs": 530,
+        "rowsRead": 13,
+        "rowsWritten": 857
+      },
+      "select_point_x200": {
+        "n": 200,
+        "medianMs": 46.17,
+        "p95Ms": 69.46,
+        "totalMs": 10624.6,
+        "rowsRead": 1,
+        "rowsWritten": 0
+      },
+      "select_scan_x5": {
+        "n": 5,
+        "medianMs": 51.55,
+        "p95Ms": 63.31,
+        "totalMs": 264.2,
+        "rowsRead": 12,
+        "rowsWritten": 0
+      },
+      "update_single_x100": {
+        "n": 100,
+        "medianMs": 69.63,
+        "p95Ms": 104.56,
+        "totalMs": 7624.2,
+        "rowsRead": 204,
+        "rowsWritten": 209
+      },
+      "update_bulk_20000_rows": {
+        "n": 1,
+        "medianMs": 407.4,
+        "p95Ms": 407.4,
+        "totalMs": 407.4,
+        "rowsRead": 4,
+        "rowsWritten": 1234
+      },
+      "metadata_create_truncate_drop_x20": {
+        "n": 80,
+        "medianMs": 68.68,
+        "p95Ms": 84.76,
+        "totalMs": 5680,
+        "rowsRead": 1036,
+        "rowsWritten": 1043
+      }
+    }
+  },
+  "websocket": {
+    "testedAt": "2026-10-19T12:22:16.870954+00:00",
+    "target": "deployed Cloudflare Worker /ws",
+    "transport": "WSS through HTTPS_PROXY using HttpsProxyAgent; bearer and Cloudflare Access headers supplied from ignored local env files",
+    "clientVersions": {
+      "psql": "17.11",
+      "pglite": "0.5.8",
+      "postgres": "18.3",
+      "drizzle-orm": "0.45.4",
+      "@neondatabase/serverless": "1.2.0",
+      "ws": "8.22.0"
+    },
+    "checks": {
+      "drizzleParameterizedQuery": "passed",
+      "drizzleTransactionInsertAndSelect": "passed",
+      "drizzleSqlErrorThenSuccessfulQuery": "passed",
+      "psqlSelectVersion": "passed",
+      "psqlCreateInsertSelect": "passed",
+      "psqlExplicitRollback": "passed, asserted count=1",
+      "psqlDisconnectRollback": "passed, asserted count=1 after reconnect",
+      "psqlCommittedRowAcrossReconnect": "passed",
+      "psqlSmokeTableCleanup": "passed, dropped table",
+      "localBridgeCleanup": "SIGTERM sent to all agent-owned ws-bridge.mjs processes"
+    },
+    "limits": [
+      "One sequential WebSocket session at a time",
+      "No production memory profiling or crash/restart test in these checks",
+      "Cloudflare Access was a temporary test prerequisite"
+    ]
+  },
+  "cleanRedeployment": {
+    "target": "clean source deployment",
+    "queries": [
+      {
+        "query": "SELECT count(*)::integer AS count FROM bench",
+        "status": 200,
+        "body": {
+          "rows": [
+            {
+              "count": 20100
+            }
+          ],
+          "rowsRead": 411,
+          "rowsWritten": 644
+        }
+      },
+      {
+        "query": "SELECT name,setting,unit FROM pg_settings WHERE name IN ('shared_buffers','work_mem','maintenance_work_mem','max_connections') ORDER BY name",
+        "status": 200,
+        "body": {
+          "rows": [
+            {
+              "name": "maintenance_work_mem",
+              "setting": "16384",
+              "unit": "kB"
+            },
+            {
+              "name": "max_connections",
+              "setting": "10",
+              "unit": null
+            },
+            {
+              "name": "shared_buffers",
+              "setting": "2048",
+              "unit": "8kB"
+            },
+            {
+              "name": "work_mem",
+              "setting": "1024",
+              "unit": "kB"
+            }
+          ],
+          "rowsRead": 7,
+          "rowsWritten": 0
+        }
+      }
+    ],
+    "multipartSha256": "fe0f103d6c22b7695ce2764b02d78dec638156452d72ff111e3a88be178bce79"
+  }
+}

@@ -148,6 +148,7 @@ function normalizeOptions(filename, options = {}) {
     compression = 'sparse',
     storage = 'auto',
     backend,
+    store,
     wasm,
     initialBytes,
     _store,
@@ -184,6 +185,7 @@ function normalizeOptions(filename, options = {}) {
     compression,
     storage,
     backend,
+    store,
     wasm,
     initialBytes,
     _store,
@@ -287,9 +289,10 @@ export class SingleFileFS extends BaseFilesystem {
     super();
     const norm = normalizeOptions(filename, options);
 
-    let store = norm._store;
+    let store = norm._store ?? norm.store;
     let existingFormat = norm._format ?? null;
     let resolvedFilename = norm._resolvedFilename ?? filename;
+    const ownsStore = !norm.store;
 
     if (!store) {
       if (!defaultPlatform?.openSync) {
@@ -301,6 +304,8 @@ export class SingleFileFS extends BaseFilesystem {
       store = opened.store;
       existingFormat = opened.format;
       resolvedFilename = opened.filename;
+    } else if (norm.store && norm._format === undefined) {
+      existingFormat = assertContainerFormat(store);
     }
 
     this.filename = resolvedFilename;
@@ -308,6 +313,7 @@ export class SingleFileFS extends BaseFilesystem {
     this.redbCacheBytes = norm.redbCacheBytes;
     this.compression = norm.compression;
     this.store = store;
+    this._ownsStore = ownsStore;
 
     try {
       if (existingFormat) {
@@ -416,9 +422,11 @@ export class SingleFileFS extends BaseFilesystem {
       this._needsHardwareSync = false;
       this.resetCounters();
     } catch (error) {
-      try {
-        this.store.close();
-      } catch {}
+      if (this._ownsStore) {
+        try {
+          this.store.close();
+        } catch {}
+      }
       throw error;
     }
   }
@@ -426,10 +434,13 @@ export class SingleFileFS extends BaseFilesystem {
   /**
    * Universal async factory that works in Node.js, Bun, Deno, and Browser OPFS / Memory.
    * Inside a Browser Dedicated Web Worker, automatically uses a single OPFS file via
-   * FileSystemSyncAccessHandle unless `filename === ':memory:'` or `options.backend` is given.
+   * FileSystemSyncAccessHandle unless `filename === ':memory:'` or `options.backend` / `options.store` is given.
    */
   static async open(filename, options = {}) {
     const norm = normalizeOptions(filename, options);
+    if (norm.store) {
+      return new SingleFileFS(filename, options);
+    }
     if (!defaultPlatform?.openAsync) {
       throw new Error('No platform storage adapter registered');
     }
@@ -637,6 +648,10 @@ export class SingleFileFS extends BaseFilesystem {
     );
   }
 
+  get pending() {
+    return this.hasPendingChanges();
+  }
+
   /**
    * Delete all persisted chunks (including any 9-byte split tail keys) for `ino`
    * starting at `fromPage`, paginated in 256-entry batches to keep WASM memory bounded
@@ -698,101 +713,107 @@ export class SingleFileFS extends BaseFilesystem {
     this._closeReadTx();
 
     const writtenNodes = [];
-    const tx = this.store.beginWrite({ durable: this.durable, sync: effectiveSync });
-    try {
-      for (const [ino, persistedSize] of this.deletedNodes) {
-        if (persistedSize > 0) {
-          this._deletePersistedChunks(tx, ino, 0, persistedSize);
-        }
-        tx.delete('nodes', encodeNodeKey(ino, this._nodeKeyBuf));
-      }
+    let trimmedBytes = 0;
+    let blobPuts = 0;
+    let storedBytes = 0;
+    let zeroChunks = 0;
+    let metadataUpdates = 0;
 
-      for (const [ino, fromPage] of this.truncates) {
-        if (this.deletedNodes.has(ino)) continue;
-        const n = this.inodes.get(ino);
-        if (n?.persisted && n.persistedSize > 0) {
-          this._deletePersistedChunks(tx, ino, fromPage, n.persistedSize);
+    this.store.writeTransaction(
+      tx => {
+        for (const [ino, persistedSize] of this.deletedNodes) {
+          if (persistedSize > 0) {
+            this._deletePersistedChunks(tx, ino, 0, persistedSize);
+          }
+          tx.delete('nodes', encodeNodeKey(ino, this._nodeKeyBuf));
         }
-      }
 
-      // Insert dirty chunks in sorted (ino, page) order for optimal B-tree leaf locality
-      if (this._dirtyCount > 0) {
-        const inos = this.dirty.size > 1 ? Array.from(this.dirty.keys()).sort((a, b) => a - b) : this.dirty.keys();
-        for (const ino of inos) {
+        for (const [ino, fromPage] of this.truncates) {
           if (this.deletedNodes.has(ino)) continue;
-          const pagesMap = this.dirty.get(ino);
-          const pages = pagesMap.size > 1 ? Array.from(pagesMap.keys()).sort((a, b) => a - b) : pagesMap.keys();
           const n = this.inodes.get(ino);
-          const truncLimit = this.truncates.get(ino);
+          if (n?.persisted && n.persistedSize > 0) {
+            this._deletePersistedChunks(tx, ino, fromPage, n.persistedSize);
+          }
+        }
 
-          for (const page of pages) {
-            const data = pagesMap.get(page);
-            const encoded = encodeChunk(data, this.compression, this._encBuf);
-            const encLen = encoded.byteLength;
-            if (encLen > 0) {
-              this.counters.trimmedBytes += Math.max(0, this.pageSize - encLen);
-              this._writeChunk(tx, ino, page, encoded);
-              this.counters.blobPuts++;
-              this.counters.storedBytes += encLen;
-            } else {
-              this.counters.trimmedBytes += this.pageSize;
-              this.counters.zeroChunks++;
-              if (
-                n?.persisted &&
-                page * this.pageSize < n.persistedSize &&
-                (truncLimit === undefined || page < truncLimit)
-              ) {
-                tx.delete('chunks', encodeChunkKey(ino, page, this._keyBuf));
+        // Insert dirty chunks in sorted (ino, page) order for optimal B-tree leaf locality
+        if (this._dirtyCount > 0) {
+          const inos = this.dirty.size > 1 ? Array.from(this.dirty.keys()).sort((a, b) => a - b) : this.dirty.keys();
+          for (const ino of inos) {
+            if (this.deletedNodes.has(ino)) continue;
+            const pagesMap = this.dirty.get(ino);
+            const pages = pagesMap.size > 1 ? Array.from(pagesMap.keys()).sort((a, b) => a - b) : pagesMap.keys();
+            const n = this.inodes.get(ino);
+            const truncLimit = this.truncates.get(ino);
+
+            for (const page of pages) {
+              const data = pagesMap.get(page);
+              const encoded = encodeChunk(data, this.compression, this._encBuf);
+              const encLen = encoded.byteLength;
+              if (encLen > 0) {
+                trimmedBytes += Math.max(0, this.pageSize - encLen);
+                this._writeChunk(tx, ino, page, encoded);
+                blobPuts++;
+                storedBytes += encLen;
+              } else {
+                trimmedBytes += this.pageSize;
+                zeroChunks++;
+                if (
+                  n?.persisted &&
+                  page * this.pageSize < n.persistedSize &&
+                  (truncLimit === undefined || page < truncLimit)
+                ) {
+                  tx.delete('chunks', encodeChunkKey(ino, page, this._keyBuf));
+                }
               }
             }
           }
         }
-      }
 
-      for (const ino of this.dirtyNodes) {
-        if (this.deletedNodes.has(ino)) continue;
-        const n = this.inodes.get(ino);
-        if (!n) continue;
-        // lazytime: keep live mtime in RAM for lstat/fstat and only rewrite the
-        // `nodes` B-tree on structural changes (create/size/mode/path), explicit
-        // utimes(), or clean closeFs(). Avoids touching a 2nd B-tree on every WAL write.
-        if (
-          n.persisted &&
-          n.size === n.persistedSize &&
-          n.mode === n.persistedMode &&
-          n.path === n.persistedPath &&
-          !n.mtimeExplicit &&
-          !this._flushingClose
-        ) {
-          continue;
-        }
-        if (
-          n.persisted &&
-          n.size === n.persistedSize &&
-          n.mtime === n.persistedMtime &&
-          n.mode === n.persistedMode &&
-          n.path === n.persistedPath
-        ) {
+        for (const ino of this.dirtyNodes) {
+          if (this.deletedNodes.has(ino)) continue;
+          const n = this.inodes.get(ino);
+          if (!n) continue;
+          // lazytime: keep live mtime in RAM for lstat/fstat and only rewrite the
+          // `nodes` B-tree on structural changes (create/size/mode/path), explicit
+          // utimes(), or clean closeFs(). Avoids touching a 2nd B-tree on every WAL write.
+          if (
+            n.persisted &&
+            n.size === n.persistedSize &&
+            n.mode === n.persistedMode &&
+            n.path === n.persistedPath &&
+            !n.mtimeExplicit &&
+            !this._flushingClose
+          ) {
+            continue;
+          }
+          if (
+            n.persisted &&
+            n.size === n.persistedSize &&
+            n.mtime === n.persistedMtime &&
+            n.mode === n.persistedMode &&
+            n.path === n.persistedPath
+          ) {
+            writtenNodes.push(n);
+            continue;
+          }
+          tx.set('nodes', encodeNodeKey(ino, this._nodeKeyBuf), encodeNodeBinary(n, this._nodeBuf));
+          metadataUpdates++;
           writtenNodes.push(n);
-          continue;
         }
-        tx.set('nodes', encodeNodeKey(ino, this._nodeKeyBuf), encodeNodeBinary(n, this._nodeBuf));
-        this.counters.metadataUpdates++;
-        writtenNodes.push(n);
-      }
 
-      if (this.metaDirty) {
-        tx.set('meta', 'next_ino', String(this.nextIno));
-      }
+        if (this.metaDirty) {
+          tx.set('meta', 'next_ino', String(this.nextIno));
+        }
+      },
+      { durable: this.durable, sync: effectiveSync }
+    );
 
-      tx.commit();
-    } catch (error) {
-      try {
-        tx.abort();
-      } catch {}
-      throw error;
-    }
-
+    this.counters.trimmedBytes += trimmedBytes;
+    this.counters.blobPuts += blobPuts;
+    this.counters.storedBytes += storedBytes;
+    this.counters.zeroChunks += zeroChunks;
+    this.counters.metadataUpdates += metadataUpdates;
     this.counters.commits++;
     if (this.durable) {
       this._needsHardwareSync = !effectiveSync;
@@ -977,7 +998,9 @@ export class SingleFileFS extends BaseFilesystem {
       this._flushingClose = false;
       this._closeReadTx();
       this.closed = true;
-      this.store.close();
+      if (this._ownsStore) {
+        this.store.close();
+      }
     }
     if (quitError) throw quitError;
   }

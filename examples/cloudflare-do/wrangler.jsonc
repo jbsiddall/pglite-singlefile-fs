@@ -1,0 +1,13 @@
+{
+  "name": "pglite-do-example",
+  "main": "src/worker.mjs",
+  "compatibility_date": "2026-10-01",
+  "compatibility_flags": ["nodejs_compat"],
+  "define": { "import.meta.url": "\"file:///pglite/index.js\"" },
+  "durable_objects": { "bindings": [{ "name": "DB", "class_name": "Db" }] },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["Db"] }],
+  "rules": [
+    { "type": "CompiledWasm", "globs": ["**/*.wasm"], "fallthrough": true },
+    { "type": "Data", "globs": ["**/*.data"], "fallthrough": true }
+  ]
+}

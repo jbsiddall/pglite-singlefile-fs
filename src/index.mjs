@@ -18,6 +18,7 @@ import {
   verifyBackendAsync,
 } from './single-file-fs.mjs';
 import { REDB_MAGIC, hasRedbMagic } from './container-format.mjs';
+import { DurableObjectStore } from './durable-object-store.mjs';
 
 function assertExistingNodeFileSync(filePath) {
   if (!fs.existsSync(filePath)) return false;
@@ -158,6 +159,7 @@ setPlatformAdapter({
 
 export {
   SingleFileFS,
+  DurableObjectStore,
   checkpoint,
   createOpfsBackend,
   createOpfsBackendFromHandle,

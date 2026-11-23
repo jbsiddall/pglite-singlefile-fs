@@ -1,0 +1,9 @@
+node_modules
+assets
+.state
+.wrangler
+.seed.sqlite*
+.seed.pglite*
+.dev.vars
+.dev.vars.*
+generated/

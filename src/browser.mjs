@@ -11,6 +11,7 @@ import {
   verifyBackendSync,
   verifyBackendAsync,
 } from './single-file-fs.mjs';
+import { DurableObjectStore } from './durable-object-store.mjs';
 
 function openBrowserSync(filename, norm) {
   if (norm.storage === 'node') {
@@ -82,6 +83,7 @@ setPlatformAdapter({
 
 export {
   SingleFileFS,
+  DurableObjectStore,
   checkpoint,
   createOpfsBackend,
   createOpfsBackendFromHandle,

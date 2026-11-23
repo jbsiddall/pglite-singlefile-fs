@@ -15,6 +15,82 @@ export interface CheckpointResult {
     compacted: boolean;
 }
 
+export interface DurableObjectSqlCursor {
+    toArray(): Record<string, unknown>[];
+    one?(): Record<string, unknown>;
+    [Symbol.iterator]?(): Iterator<Record<string, unknown>>;
+}
+
+export interface DurableObjectSql {
+    exec(query: string, ...bindings: unknown[]): DurableObjectSqlCursor;
+}
+
+export interface KeyValueScanOptions {
+    start?: string | Uint8Array;
+    end?: string | Uint8Array;
+    limit?: number;
+}
+
+export interface KeyValueEntry {
+    key: Uint8Array;
+    value: Uint8Array;
+}
+
+export interface KeyValueReadTx {
+    listTables(): string[];
+    get(table: string, key: string | Uint8Array): Uint8Array | undefined;
+    getView(table: string, key: string | Uint8Array): Uint8Array | undefined;
+    getText(table: string, key: string | Uint8Array): string | undefined;
+    scan(table: string, options?: KeyValueScanOptions): KeyValueEntry[];
+    scanEach(table: string, options: KeyValueScanOptions | undefined, callback: (key: Uint8Array, value: Uint8Array) => void): void;
+    close(): void;
+}
+
+export interface KeyValueWriteTx {
+    set(table: string, key: string | Uint8Array, value: string | Uint8Array): void;
+    delete(table: string, key: string | Uint8Array): void;
+    scan(table: string, options?: KeyValueScanOptions): KeyValueEntry[];
+    get?(table: string, key: string | Uint8Array): Uint8Array | undefined;
+    commit?(): void;
+    abort?(): void;
+}
+
+export interface KeyValueStore {
+    listTables(): string[];
+    get(table: string, key: string | Uint8Array): Uint8Array | undefined;
+    getText(table: string, key: string | Uint8Array): string | undefined;
+    beginRead(): KeyValueReadTx;
+    readTransaction<T>(fn: (tx: KeyValueReadTx) => T): T;
+    writeTransaction<T>(fn: (tx: KeyValueWriteTx) => T, options?: { durable?: boolean; sync?: boolean }): T;
+    sync(): void;
+    compact(): boolean;
+    checkIntegrity(): boolean;
+    close(): void;
+}
+
+export class DurableObjectStore implements KeyValueStore {
+    constructor(sql: DurableObjectSql, transactionSync?: <T>(callback: () => T) => T);
+    readonly sql: DurableObjectSql;
+    listTables(): string[];
+    get(table: string, key: string | Uint8Array): Uint8Array | undefined;
+    getText(table: string, key: string | Uint8Array): string | undefined;
+    scan(table: string, options?: KeyValueScanOptions): KeyValueEntry[];
+    beginRead(): KeyValueReadTx;
+    readTransaction<T>(fn: (tx: KeyValueReadTx) => T): T;
+    writeTransaction<T>(fn: (tx: KeyValueWriteTx) => T): T;
+    beginWrite(): Required<Pick<KeyValueWriteTx, 'set' | 'delete' | 'get' | 'scan' | 'commit' | 'abort'>>;
+    sync(): void;
+    compact(): boolean;
+    checkIntegrity(): boolean;
+    close(): void;
+    exec(text: string, ...bindings: unknown[]): Record<string, unknown>[];
+    prepare(text: string): {
+        run(...args: unknown[]): Record<string, never>;
+        get(...args: unknown[]): Record<string, unknown> | undefined;
+        all(...args: unknown[]): Record<string, unknown>[];
+    };
+}
+
 export interface SingleFileFSOptions {
     /** Default true. False uses redb Durability::None (not crash-safe). */
     durable?: boolean;
@@ -37,6 +113,8 @@ export interface SingleFileFSOptions {
     storage?: 'auto' | 'node' | 'opfs' | 'memory';
     /** Optional custom redb StorageBackend (e.g. from createOpfsBackendFromHandle). */
     backend?: StorageBackend;
+    /** Optional pre-configured KV store (e.g. DurableObjectStore for Cloudflare Durable Objects). */
+    store?: KeyValueStore;
     /**
      * Optional explicit redb WASM source.
      * `URL | string` is supported by `SingleFileFS.open()`; synchronous `new SingleFileFS()`
@@ -77,6 +155,7 @@ export class SingleFileFS extends BaseFilesystem {
     readonly pageSize: number;
     readonly redbCacheBytes: number;
     readonly compression: ChunkCompression;
+    readonly pending: boolean;
     counters: FilesystemCounters;
     resetCounters(): void;
     syncToFs(relaxedDurability?: boolean): Promise<void>;

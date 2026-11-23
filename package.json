@@ -71,11 +71,11 @@
     "@electric-sql/pglite": "^0.5.8"
   },
   "devDependencies": {
-    "@electric-sql/pglite": "0.5.8",
-    "@types/node": "^24.0.0",
-    "@vitest/ui": "5.0.3",
+    "@electric-sql/pglite": "0.5.17",
+    "@types/node": "^26.6.6",
+    "@vitest/ui": "5.1.1",
     "fast-check": "4.10.2",
-    "typescript": "5.9.3",
-    "vitest": "5.0.3"
+    "typescript": "7.0.2",
+    "vitest": "5.1.1"
   }
 }

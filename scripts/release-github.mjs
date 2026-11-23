@@ -54,7 +54,7 @@ else {
 
 const reportRoot = resolve('release-reports');
 const reports = readdirSync(reportRoot, { withFileTypes: true })
-  .filter(e => e.isDirectory() && /^reports-(node|deno|bun)-[\d.]+-(ubuntu-24\.04(?:-arm)?|macos-14)$/.test(e.name));
+  .filter(e => e.isDirectory() && /^reports-(node|deno|bun)-[\d.]+-(ubuntu-24\.04(?:-arm)?|macos-1[45])$/.test(e.name));
 if (!reports.length) throw new Error('No CI reports to attach');
 if (process.env.EXPECTED_REPORT_COUNT && reports.length !== Number(process.env.EXPECTED_REPORT_COUNT)) throw new Error('Incomplete runtime/platform report set');
 const historicalOutcomes = [];

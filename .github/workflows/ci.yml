@@ -35,9 +35,9 @@ jobs:
           - { runtime: node, version: '26.10.0', runner: ubuntu-24.04-arm, arch: arm64 }
           - { runtime: deno, version: '2.9.7', runner: ubuntu-24.04-arm, arch: arm64 }
           - { runtime: bun, version: '1.4.2', runner: ubuntu-24.04-arm, arch: arm64 }
-          - { runtime: node, version: '26.10.0', runner: macos-14, arch: arm64 }
-          - { runtime: deno, version: '2.9.7', runner: macos-14, arch: arm64 }
-          - { runtime: bun, version: '1.4.2', runner: macos-14, arch: arm64 }
+          - { runtime: node, version: '26.10.0', runner: macos-15, arch: arm64 }
+          - { runtime: deno, version: '2.9.7', runner: macos-15, arch: arm64 }
+          - { runtime: bun, version: '1.4.2', runner: macos-15, arch: arm64 }
     env:
       TEST_RUNTIME: ${{ matrix.runtime }}
       BENCH_RUNTIME: ${{ matrix.runtime }}
@@ -46,15 +46,15 @@ jobs:
       EXPECTED_ARCH: ${{ matrix.arch }}
       CI_REPORT_LABEL: ${{ matrix.runtime }}-${{ matrix.version }}-${{ matrix.runner }}
     steps:
-      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Install Node coordinator
-        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: '24.21.0'
           cache: npm
       - name: Install selected Node
         if: matrix.runtime == 'node'
-        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: ${{ matrix.version }}
       - name: Install selected Deno
@@ -86,7 +86,7 @@ jobs:
       - name: Upload test and benchmark reports
         if: always()
         id: reports
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: reports-${{ env.CI_REPORT_LABEL }}
           path: reports/
@@ -111,13 +111,13 @@ jobs:
       group: release-main
       cancel-in-progress: false
     steps:
-      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
-      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: '24.21.0'
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           pattern: reports-*
           path: release-reports

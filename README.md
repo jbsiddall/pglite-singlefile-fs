@@ -12,84 +12,43 @@
   <a href="#why-singlefilefs">Why SingleFileFS</a> ·
   <a href="#quick-start">Quick Start</a> ·
   <a href="#benchmarks">Benchmarks</a> ·
-  <a href="#durability--limits">Durability &amp; Limits</a> ·
-  <a href="#cloudflare-durable-objects">Cloudflare DO</a>
+  <a href="#durability--limits">Durability &amp; Limits</a>
 </p>
 
 </div>
 
-A [`BaseFilesystem`](src/single-file-fs.mjs) adapter for [PGlite](https://github.com/electric-sql/pglite) backed by [`redb-js`](https://github.com/jbsiddall/redb-js) (a Copy-on-Write ACID B-tree in WebAssembly). PostgreSQL runs SQL, indexes, transactions, and extensions as usual; `SingleFileFS` stores the entire cluster as self-describing 8 KiB blocks inside **strictly one file** with **zero `-wal` or `-shm` sidecar files**.
+A [`BaseFilesystem`](src/single-file-fs.mjs) for [PGlite](https://github.com/electric-sql/pglite) backed by [`redb-js`](https://github.com/jbsiddall/redb-js) (a Copy-on-Write ACID B-tree in WebAssembly). Keep full PostgreSQL inside **strictly 1 file** with **zero `-wal` or `-shm` sidecars**.
 
 > [!NOTE]
-> **Pre-stable library.** Back up important data and review the [durability and single-writer limits](#durability--limits) before production use.
+> Pre-stable library. Back up important data and review [Durability &amp; Limits](#durability--limits) before production use.
 
 ---
 
 ## Why SingleFileFS?
 
-| Property | PGlite `NodeFS` / `OpfsAhpFS` | PGlite `IdbFs` (IndexedDB) | **`SingleFileFS`** |
+| | PGlite `NodeFS` / `OpfsAhpFS` | PGlite `IdbFs` (IndexedDB) | **`SingleFileFS`** |
 | --- | --- | --- | --- |
-| **Files / open handles** | ~977–1,079 host or OPFS files | Whole-file blobs + full `MEMFS` | **1 file / 1 handle** |
-| **Safari & iOS browsers** | Unsupported on Safari ([docs](https://pglite.dev/docs/filesystems)) | Loads full DB into tab RAM | **1 OPFS handle + 8 MiB cache**\* |
-| **Sidecars while open** | Multi-file directory / pool | IndexedDB object store | **None** (no `-wal` / `-shm`) |
-| **Closed cluster size** | 40.8–42.3 MB | Whole-file blobs | **17.3–26.1 MB** (38–59% smaller) |
-| **Cross-runtime format** | Directory or browser-specific | Browser-only | **1 portable file** (OPFS ↔ Server) |
+| **Files / handles** | ~977–1,079 files | Whole-file blobs + full `MEMFS` | **1 file / 1 handle** |
+| **Safari &amp; iOS** | Fails 252 OPFS handle cap | Loads entire DB into tab RAM | **1 OPFS handle + 8 MiB cache**\* |
+| **Sidecars while open** | Multi-file dir / pool | IndexedDB store | **None** (no `-wal` / `-shm`) |
+| **Closed size** | 40.8–42.3 MB | Whole-file blobs | **17.3–26.1 MB** (38–59% smaller) |
+| **Portability** | Directory / browser-bound | Browser-only | **Copy 1 file** (OPFS ↔ Server) |
 
-<table>
-<tr>
-<td width="50%" valign="top">
+- **Works within Safari OPFS &amp; mobile memory limits:** Built-in `OpfsAhpFS` is unsupported in Safari ([PGlite docs](https://pglite.dev/docs/filesystems)) because `initdb` opens ~970–1,079 files, exceeding Safari's 252 `FileSystemSyncAccessHandle` cap and Linux Chromium's 1,024 soft FD default ([pglite#1064](https://github.com/electric-sql/pglite/pull/1064)). The `IdbFs` fallback ([Emscripten `IDBFS`](https://emscripten.org/docs/api_reference/Filesystem-API.html)) loads the entire DB into `MEMFS` RAM on boot, risking iOS/iPadOS [Jetsam](https://developer.apple.com/documentation/xcode/identifying-high-memory-use-with-jetsam-event-reports) tab kills. `SingleFileFS` opens **1** [OPFS handle](https://developer.mozilla.org/en-US/docs/Web/API/FileSystemSyncAccessHandle) ([WebKit](https://webkit.org/blog/12257/the-file-system-access-api-with-origin-private-file-system/)) and pages 8 KiB blocks on demand via an 8 MiB cache.\*
+- **Strictly 1 file, full PostgreSQL:** [`redb`](https://github.com/cberner/redb) Copy-on-Write commits avoid `-wal` / `-shm` sidecars even while open ([SQLite WAL](https://www.sqlite.org/wal.html), [`tests/crash.test.ts`](tests/crash.test.ts)). Startup, reads, cold reopen, and `relaxedDurability` writes match or beat built-in PGlite VFS (tradeoffs: 10k-row batch writes are `1.4–1.9×` `NodeFS`; single-writer only).
+- **Portable across runtimes:** One `PGSF` v3 format ([`src/container-format.mjs`](src/container-format.mjs)) across Node.js, Bun, Deno, Browser OPFS, and `:memory:` (`exportBytes()`). Call `await db.close()`, copy the file from OPFS to a server (or vice versa), and open directly.
+- **38–59% smaller:** Default `'sparse'` encoding elides PostgreSQL zero holes ([`src/chunk-codec.mjs`](src/chunk-codec.mjs)) — **18.2 MB** vs **40.8 MB** `OpfsAhpFS` ([browser test](scripts/browser-pglite-test.mjs)) and **26.1 MB** (**17.3 MB** `lz4`) vs **42.3 MB** `NodeFS` ([raw JSON](docs/benchmarks/node23-macos-arm64.json)).
 
-### 1. Fits Safari OPFS &amp; mobile RAM limits
-
-- PGlite's built-in `OpfsAhpFS` is unsupported in Safari ([PGlite Filesystems docs](https://pglite.dev/docs/filesystems)): `initdb` opens ~970–1,079 files, exceeding **Safari's 252 open `FileSystemSyncAccessHandle` limit** and even Linux Chromium's 1,024 soft FD default ([electric-sql/pglite#1064](https://github.com/electric-sql/pglite/pull/1064)).
-- PGlite's `IdbFs` fallback wraps [Emscripten `IDBFS`](https://emscripten.org/docs/api_reference/Filesystem-API.html), syncing the whole database into in-memory `MEMFS` on boot. On iOS/iPadOS Safari, per-process [Jetsam memory limits](https://developer.apple.com/documentation/xcode/identifying-high-memory-use-with-jetsam-event-reports) scale with device RAM and are shared with your app and WASM heap, putting medium/large databases at risk of tab reloads.
-- `SingleFileFS` opens **1** OPFS [`FileSystemSyncAccessHandle`](https://developer.mozilla.org/en-US/docs/Web/API/FileSystemSyncAccessHandle) ([WebKit OPFS](https://webkit.org/blog/12257/the-file-system-access-api-with-origin-private-file-system/)) and pages 8 KiB blocks on demand through a bounded page cache (default `8 MiB`).
-
-</td>
-<td width="50%" valign="top">
-
-### 2. Strictly 1 file, zero sidecars, full Postgres
-
-- Even while open, every table, index, and WAL segment stays inside **1 file** — no `-wal` or `-shm` sidecar files ([SQLite WAL docs](https://www.sqlite.org/wal.html)), backed by [`redb`](https://github.com/cberner/redb) Copy-on-Write transactions (verified in [`tests/crash.test.ts`](tests/crash.test.ts) and [`scripts/runtime-worker.mjs`](scripts/runtime-worker.mjs)).
-- You keep full PostgreSQL (JSONB, CTEs, partial/GIN indexes, constraints, extensions) with startup, warm-read, reopen, and `relaxedDurability` write speeds **on par with or faster than** PGlite's built-in VFS ([benchmarks](#benchmarks)).
-- **Tradeoffs to weigh:** 10k-row batch writes are `1.43–1.89×` `NodeFS`, strict macOS `F_FULLFSYNC` adds ~4 ms/commit, and PGlite + `redb` remain single-writer only.
-
-</td>
-</tr>
-<tr>
-<td width="50%" valign="top">
-
-### 3. Byte-for-byte portable across runtimes
-
-- Uses one `PGSF` v3 binary layout ([`src/container-format.mjs`](src/container-format.mjs)) across Node.js, Bun, Deno, Browser OPFS, and `:memory:` (`exportBytes()`).
-- Call `await db.close()`, copy the single `.pglite` file from Browser OPFS to a server (or pre-seed a `.pglite` image on a server and ship it to clients), and open it directly without conversion (verified in [`tests/filesystem.property.test.ts`](tests/filesystem.property.test.ts) and [`scripts/browser-pglite-test.mjs`](scripts/browser-pglite-test.mjs)).
-- Also includes [`DurableObjectStore`](src/durable-object-store.mjs) for Cloudflare Durable Objects with redb-to-DO seeding ([`examples/cloudflare-do`](examples/cloudflare-do/README.md)).
-
-</td>
-<td width="50%" valign="top">
-
-### 4. 38–59% smaller on disk and in OPFS
-
-- Default `'sparse'` encoding strips PostgreSQL's empty page holes and pre-zeroed WAL/relation blocks with minimal CPU cost ([`src/chunk-codec.mjs`](src/chunk-codec.mjs)); optional `'lz4'` shrinks files further.
-- **Browser OPFS** ([`browser-pglite-test.mjs`](scripts/browser-pglite-test.mjs)): **18.19 MB** (`sparse`) / **17.83 MB** (`lz4`) vs **40.76 MB** for `OpfsAhpFS` (**55–56% smaller**).
-- **Node.js** ([`node23-macos-arm64.json`](docs/benchmarks/node23-macos-arm64.json)): **26.05 MB** compacted (`23.62 MB` with `full_page_writes=off`, **17.29 MB** with `lz4`) vs **42.25 MB** for `NodeFS` (**38–59% smaller**).
-
-</td>
-</tr>
-</table>
-
-<sub>\* <strong>Verification note:</strong> Automated browser CI currently verifies single-handle OPFS persistence across restarts in headless Chrome (<code>scripts/browser-pglite-test.mjs</code> — 1 OPFS file vs 1,071–1,079 for <code>OpfsAhpFS</code>). Automated Safari/WebKit CI is not yet configured; Safari OPFS compatibility relies on WebKit's single-handle <code>FileSystemSyncAccessHandle</code> support.</sub>
+<sub>\* Automated browser CI currently verifies single-handle OPFS persistence in headless Chrome (<code>scripts/browser-pglite-test.mjs</code>); automated Safari/WebKit CI is not yet configured.</sub>
 
 ---
 
 ## Quick Start
 
-**Requirements:** Node.js `>=18`, Bun, or Deno (zero native addons); modern browsers with OPFS `FileSystemSyncAccessHandle` in a Dedicated Web Worker (or `:memory:` on the main thread); peer dependency `@electric-sql/pglite` (`^0.5.8`).
+Requires Node.js `>=18`, Bun, Deno, or a browser Dedicated Web Worker with OPFS `FileSystemSyncAccessHandle` (zero native addons; peer dep `@electric-sql/pglite ^0.5.8`).
 
 ```sh
 npm install pglite-singlefile-fs @electric-sql/pglite
-# or directly from GitHub:
-npm install git+https://github.com/jbsiddall/pglite-singlefile-fs.git @electric-sql/pglite
 ```
 
 ### Node.js, Bun, and Deno
@@ -101,15 +60,12 @@ import { SingleFileFS } from 'pglite-singlefile-fs';
 const fs = new SingleFileFS('./postgres.pglite');
 const db = await PGlite.create({
   fs,
-  // Optional: SIGKILL-safe CoW commits without per-query fsync (synced on flush() / close())
-  relaxedDurability: true,
-  // Optional: safe on CoW SingleFileFS because torn 8 KiB pages cannot occur
-  startParams: [...PGlite.defaultStartParams, ...SingleFileFS.recommendedStartParams],
+  relaxedDurability: true, // optional: SIGKILL-safe CoW commits; hardware-synced on flush()/close()
+  startParams: [...PGlite.defaultStartParams, ...SingleFileFS.recommendedStartParams], // full_page_writes=off
 });
 
 await db.exec('CREATE TABLE IF NOT EXISTS notes (id INT PRIMARY KEY, body TEXT NOT NULL)');
 await db.query('INSERT INTO notes VALUES ($1, $2)', [1, 'Hello, PostgreSQL']);
-console.log((await db.query('SELECT * FROM notes')).rows);
 await db.close();
 ```
 
@@ -119,12 +75,8 @@ await db.close();
 import { PGlite } from '@electric-sql/pglite';
 import { SingleFileFS } from 'pglite-singlefile-fs/browser';
 
-// Persists to strictly 1 OPFS file via 1 FileSystemSyncAccessHandle
 const fs = await SingleFileFS.open('postgres.pglite');
-const db = await PGlite.create({
-  fs,
-  relaxedDurability: true, // matches OpfsAhpFS relaxed speed using 1 file
-});
+const db = await PGlite.create({ fs, relaxedDurability: true });
 
 await db.exec('CREATE TABLE IF NOT EXISTS notes (id INT PRIMARY KEY, body TEXT NOT NULL)');
 await db.query("INSERT INTO notes VALUES (1, 'Persisted in Browser OPFS')");
@@ -132,65 +84,37 @@ await db.close();
 ```
 
 <details>
-<summary><strong>In-memory export (<code>exportBytes()</code>) &amp; portable transfer</strong></summary>
+<summary><strong>More usage: <code>:memory:</code> export, checkpoints/compaction, Cloudflare Durable Objects &amp; options</strong></summary>
 
-Works on the browser main thread or on servers:
-
+#### In-memory export (`exportBytes()`)
 ```js
-import { PGlite } from '@electric-sql/pglite';
-import { SingleFileFS } from 'pglite-singlefile-fs/browser'; // or 'pglite-singlefile-fs'
-
 const fs = await SingleFileFS.open(':memory:');
 const db = await PGlite.create({ fs });
 await db.exec('CREATE TABLE t (id INT PRIMARY KEY)');
-await db.query('INSERT INTO t VALUES (1)');
 await db.close();
-
-// Standard single-file container bytes — openable in Node.js, Bun, Deno, or Browser OPFS
-const bytes = fs.exportBytes();
+const bytes = fs.exportBytes(); // portable .pglite container bytes
 ```
 
-</details>
-
-<details>
-<summary><strong>Checkpoints &amp; compaction</strong></summary>
-
+#### Checkpoint &amp; compaction
 ```js
-import { PGlite } from '@electric-sql/pglite';
-import { SingleFileFS, checkpoint } from 'pglite-singlefile-fs';
-
-const fs = new SingleFileFS('./postgres.pglite');
-const db = await PGlite.create({ fs });
-
-// Runs PostgreSQL CHECKPOINT, flushes durably, and compacts free redb pages
-await checkpoint(db, fs, { compact: true });
-await db.close();
+import { checkpoint } from 'pglite-singlefile-fs';
+await checkpoint(db, fs, { compact: true }); // CHECKPOINT + flush + compact
+await fs.closeFs({ compact: true });         // smallest closed file before archiving
 ```
 
-`db.close()` writes a final PostgreSQL shutdown checkpoint. For the smallest closed file before archiving or uploading, compact on close (`await fs.closeFs({ compact: true })`) or reopen and call `fs.compact()`.
+#### Cloudflare Durable Objects (`DurableObjectStore`)
+Pass a [`DurableObjectStore`](src/durable-object-store.mjs) via `options.store` (skips `redb` WASM loading inside Workers; persists to a single DO-legal `_pgsf_kv` table). See [`examples/cloudflare-do/README.md`](examples/cloudflare-do/README.md) for the Worker, authenticated PostgreSQL `/ws` bridge (`psql`, Drizzle, Prisma), and [`docs/CLOUDFLARE-COMPARISON.md`](docs/CLOUDFLARE-COMPARISON.md).
 
-</details>
-
-## Cloudflare Durable Objects
-
-`SingleFileFS` accepts an external KV store via `options.store` (skipping `redb` WASM loading inside Workers). [`DurableObjectStore`](src/durable-object-store.mjs) adapts Cloudflare's `ctx.storage.sql` and `ctx.storage.transactionSync` using a single DO-legal `_pgsf_kv (tbl, k, v) WITHOUT ROWID` table.
-
-<details>
-<summary><strong>Durable Object usage &amp; authenticated PostgreSQL WebSocket example</strong></summary>
-
+#### Options (`SingleFileFSOptions`)
 ```js
-import { PGlite } from '@electric-sql/pglite';
-import { SingleFileFS, DurableObjectStore } from 'pglite-singlefile-fs/browser';
-
-const store = new DurableObjectStore(
-  this.ctx.storage.sql,
-  fn => this.ctx.storage.transactionSync(fn),
-);
-const fs = new SingleFileFS('do', { store });
-const db = await PGlite.create({ fs /* + precompiled Worker WASM/data assets */ });
+new SingleFileFS('./postgres.pglite', {
+  durable: true,                   // Hardware sync contract (default: true)
+  redbCacheBytes: 8 * 1024 * 1024, // In-memory redb page cache (default: 8 MiB)
+  cacheBytes: 0,                   // Optional adapter clean-page cache (default: 0)
+  pageSize: 8192,                  // Logical chunk size for new images (default: 8 KiB)
+  compression: 'sparse',           // 'sparse' (default), 'bitsparse32', 'bitsparse16', 'lz4', 'none'
+});
 ```
-
-See [`examples/cloudflare-do/README.md`](examples/cloudflare-do/README.md) for the complete Worker, authenticated PostgreSQL `/ws` transport (`psql`, Drizzle, Prisma), redb-to-DO seeding script, and [`docs/CLOUDFLARE-COMPARISON.md`](docs/CLOUDFLARE-COMPARISON.md) for production probe limits.
 
 </details>
 
@@ -198,11 +122,9 @@ See [`examples/cloudflare-do/README.md`](examples/cloudflare-do/README.md) for t
 
 ## Benchmarks
 
-All measurements compare `SingleFileFS` directly against PGlite's built-in persistent filesystems (`NodeFS` on server, `OpfsAhpFS` in Browser OPFS) with verified row counts and checksums. Timings reflect the recorded hardware, not cross-machine guarantees; raw JSON snapshots and methodology live in [`docs/benchmarks/README.md`](docs/benchmarks/README.md).
+Compared directly against PGlite's built-in `NodeFS` and `OpfsAhpFS` with verified row counts and checksums (Apple M2 macOS; raw receipts &amp; methodology in [`docs/benchmarks/README.md`](docs/benchmarks/README.md)).
 
-### Node.js: `SingleFileFS` vs built-in `NodeFS`
-
-**Environment:** Node.js `v23.1.0`, Apple M2 macOS (`darwin/arm64`) — 1 excluded warm-up + 3 alternating fresh-process runs, **100 MiB total page-cache budget** (`NodeFS`: 100 MiB `shared_buffers`; `SingleFileFS`: 92 MiB `shared_buffers` + 8 MiB `redb` cache), 10,000-row batch / 500 single-row frequent ops including `flush()`. Raw receipt: [`docs/benchmarks/node23-macos-arm64.json`](docs/benchmarks/node23-macos-arm64.json).
+### Node.js (`v23.1.0`, 100 MiB cache budget, 3 alternating runs — [JSON](docs/benchmarks/node23-macos-arm64.json))
 
 | Metric | `NodeFS` (`fsync=off`) | `SingleFileFS` (`relaxed`) | `SingleFileFS lz4` (`relaxed`) | `SingleFileFS` (`strict`) |
 | --- | ---: | ---: | ---: | ---: |
@@ -214,23 +136,11 @@ All measurements compare `SingleFileFS` directly against PGlite's built-in persi
 | `frequentInsert` (500 ops) | 71.1 ms | 73.0 ms (`1.03×`) | 72.8 ms (`1.02×`) | 2,118.7 ms (`29.8×`)\* |
 | `frequentUpdate` (500 ops) | 77.0 ms | 77.3 ms (`1.00×`) | 77.8 ms (`1.01×`) | 2,230.0 ms (`29.0×`)\* |
 | **Cold reopen + scan** | 60.1 ms | **51.3 ms (`0.85×`)** | 60.3 ms (`1.00×`) | 76.9 ms (`1.28×`) |
-| **Host files on disk** | 977 | **1** | **1** | **1** |
-| **Compacted closed size** | 42.25 MB | **26.05 MB (`0.62×`)** | **17.29 MB (`0.41×`)** | **26.10 MB (`0.62×`)** |
+| **Host files / compacted size** | 977 / 42.25 MB | **1 / 26.05 MB (`0.62×`)** | **1 / 17.29 MB (`0.41×`)** | **1 / 26.10 MB (`0.62×`)** |
 
-<sub>\* <strong>Durability disclosure:</strong> Built-in <code>NodeFS</code> runs PostgreSQL with <code>fsync=off</code> (0 hardware syncs). <code>SingleFileFS (strict)</code> runs 500 <code>redb</code> <code>Durability::Immediate</code> commits with macOS <code>F_FULLFSYNC</code> (~4.1 ms/call on Apple NVMe; Linux <code>fdatasync</code> is typically ~0.05–0.3 ms/call). <code>SingleFileFS (relaxed)</code> commits atomically to the OS page cache (SIGKILL-safe) and hardware-syncs on <code>flush()</code> / <code>close()</code>.</sub>
+<sub>\* <code>NodeFS</code> runs with <code>fsync=off</code>; <code>SingleFileFS (strict)</code> calls macOS <code>F_FULLFSYNC</code> (~4.1 ms/call; Linux <code>fdatasync</code> is typically ~0.05–0.3 ms). With <code>full_page_writes=off</code>, <code>SingleFileFS (relaxed)</code> compacts to <strong>23.62 MB (<code>0.56×</code>)</strong> and reopens in <strong>50.4 ms</strong>.</sub>
 
-<details>
-<summary><strong>Additional Node.js variant: <code>relaxed + full_page_writes=off</code> &amp; raw uncompacted sizes</strong></summary>
-
-With `startParams: [...PGlite.defaultStartParams, ...SingleFileFS.recommendedStartParams]` (`full_page_writes=off`, safe because `redb` CoW eliminates torn 8 KiB pages):
-- `initdb`: **534.2 ms** (`0.80×`), `batchUpdate`: **37.0 ms** (`1.43×`), cold reopen: **50.4 ms** (`0.84×`), compacted size: **23.62 MB** (`0.56×`).
-- Raw uncompacted closed sizes: `sparse` **35.66 MB** (`0.84×`), `lz4` **17.83 MB** (`0.42×`) vs `NodeFS` **42.25 MB**.
-
-</details>
-
-### Browser WASM OPFS: `SingleFileFS` vs built-in `OpfsAhpFS`
-
-**Environment:** Headless Chrome `157.0.8103.80` Dedicated Web Worker on Apple M2 macOS, `@electric-sql/pglite@0.5.17`, single un-warmed run per variant via [`scripts/browser-pglite-test.mjs`](scripts/browser-pglite-test.mjs) (2,000-row batch / 100 single-row frequent ops, default 8 MiB `redb` cache, including `flush()` settle time).
+### Browser OPFS (Chrome `157.0.8103.80` Worker, `pglite@0.5.17` — [script](scripts/browser-pglite-test.mjs))
 
 | Metric | `OpfsAhpFS` (`relaxed`) | `SingleFileFS` (`relaxed`) | `SingleFileFS lz4` (`relaxed`) | `SingleFileFS` (`strict`) |
 | --- | ---: | ---: | ---: | ---: |
@@ -241,79 +151,38 @@ With `startParams: [...PGlite.defaultStartParams, ...SingleFileFS.recommendedSta
 | `frequentRead` (100 ops) | 5.4 ms | **5.1 ms (`0.94×`)** | **4.8 ms (`0.89×`)** | **5.2 ms (`0.96×`)** |
 | `frequentInsert` (100 ops) | 7.3 ms | 7.7 ms (`1.05×`) | **5.9 ms (`0.81×`)** | 101.9 ms\* |
 | `frequentUpdate` (100 ops) | 7.6 ms | **6.2 ms (`0.82×`)** | **6.2 ms (`0.82×`)** | 96.6 ms\* |
-| **OPFS files created** | 1,071 | **1** | **1** | **1** |
-| **Total OPFS size** | 40.76 MB | **18.19 MB (`0.45×`)** | **17.83 MB (`0.44×`)** | **18.20 MB (`0.45×`)** |
+| **OPFS files / total size** | 1,071 / 40.76 MB | **1 / 18.19 MB (`0.45×`)** | **1 / 17.83 MB (`0.44×`)** | **1 / 18.20 MB (`0.45×`)** |
 
-<sub>\* In strict mode, per-query <code>syncHandle.flush()</code> accounts for ~85% of single-row write latency (vs 44.8 ms / 32.4 ms on <code>OpfsAhpFS strict</code>).</sub>
-
-<details>
-<summary><strong>Full 6-variant Browser OPFS table (including <code>OpfsAhpFS strict</code> &amp; <code>no-flush</code>)</strong></summary>
-
-| Metric | `OpfsAhpFS` (`strict`) | `SingleFileFS` (`no-flush`) |
-| --- | ---: | ---: |
-| `initdb` + startup | 865.7 ms | 522.0 ms |
-| `batchRead` / `batchInsert` / `batchUpdate` | 5.5 / 4.6 / 7.0 ms | 5.0 / 3.7 / 6.2 ms |
-| `frequentRead` / `frequentInsert` / `frequentUpdate` | 7.7 / 44.8 / 32.4 ms | 5.1 / 6.4 / 7.8 ms |
-| OPFS files / size | 1,079 / 40.76 MB | 1 / 18.19 MB |
-
-</details>
+<sub>\* Strict mode calls per-query <code>syncHandle.flush()</code> (vs 44.8 ms / 32.4 ms on <code>OpfsAhpFS strict</code>, which uses 1,079 files / 40.76 MB).</sub>
 
 ---
 
-## Durability & Limits
+## Durability &amp; Limits
 
-### Durability modes
-
-| Mode | Commit path | Crash &amp; power-loss behavior |
+| Mode | Commit path | Crash / power-loss guarantee |
 | --- | --- | --- |
-| **Strict** (`durable: true`, `relaxedDurability: false`) — *default* | Per-query atomic `redb` CoW commit + hardware `fdatasync` / `fsync` / OPFS `flush()` | Survives `SIGKILL` and sudden power loss; recovers cleanly to the last committed root |
-| **Relaxed** (`durable: true`, `relaxedDurability: true`) — *recommended for interactive apps* | Coalesced atomic `redb` CoW commits to OS page cache / OPFS; hardware sync on `flush()` / `close()` | Survives `SIGKILL` and tab crashes with zero corruption; power loss before `flush()`/`close()` rolls back only the unsynced window cleanly |
-| **Unsafe** (`durable: false`) | `redb` `Durability::None` (skips commit flushes and hardware syncs) | Not crash-safe; for disposable scratch databases only |
+| **Strict** *(default)* | Per-query CoW commit + hardware `fdatasync` / `fsync` / OPFS `flush()` | Survives `SIGKILL` and sudden power loss |
+| **Relaxed** (`relaxedDurability: true`) | Coalesced CoW commits to OS/OPFS; hardware sync on `flush()` / `close()` | Survives `SIGKILL` / tab crashes; power loss rolls back only the unsynced window cleanly |
+| **Unsafe** (`durable: false`) | `redb` `Durability::None` (skips commit flushes) | Not crash-safe; disposable scratch use only |
 
-### Operational limits
-
-- **Single writer only:** PGlite is single-connection embedded PostgreSQL and `redb` enforces a single-writer file lock. Do not open the same `.pglite` file concurrently across processes, workers, or browser tabs.
-- **Close before copying:** Always `await db.close()` before copying, uploading, or moving the database file.
-- **Foreign file protection:** Opening an existing non-empty file validates the `redb` header and `PGSF` v3 schema without mutating the file (unclean foreign `redb` files are inspected in a RAM-only overlay) and rejects unrecognized files untouched ([`src/container-format.mjs`](src/container-format.mjs)).
-
-<details>
-<summary><strong>Configuration options (<code>SingleFileFSOptions</code>)</strong></summary>
-
-```js
-const fs = new SingleFileFS('./postgres.pglite', {
-  durable: true,                   // Hardware-sync durability contract (default: true)
-  redbCacheBytes: 8 * 1024 * 1024, // In-memory redb page cache in WASM (default: 8 MiB)
-  cacheBytes: 0,                   // Optional adapter clean-page cache (default: 0)
-  pageSize: 8192,                  // Logical chunk size for new images (default: 8 KiB)
-  compression: 'sparse',           // 'sparse' (default), 'bitsparse32', 'bitsparse16', 'lz4', or 'none'
-});
-```
-
-- PostgreSQL's `shared_buffers` remains the primary SQL cache; `redbCacheBytes` bounds `redb` B-tree caching inside WASM.
-- Every stored chunk carries a self-describing codec tag byte, so an existing image can be reopened under any `compression` setting.
-
-</details>
+- **Single writer only:** Do not open the same `.pglite` file concurrently from multiple processes, workers, or browser tabs.
+- **Close before copying:** Always `await db.close()` before copying, uploading, or moving the file.
+- **Foreign-file safety:** Non-`PGSF` files (including unclean foreign `redb` files) are rejected untouched ([`src/container-format.mjs`](src/container-format.mjs)).
 
 <details>
 <summary><strong>Tests, verification receipts &amp; local benchmarks</strong></summary>
 
 ```sh
-npm run build         # TypeScript declaration check (src/index.d.ts + tests)
-npm test              # Vitest: property traces, PGlite lifecycle, durability, SIGKILL recovery, Durable Objects & WS
+npm run build         # TypeScript declaration check
+npm test              # Vitest: property traces, lifecycle, durability, SIGKILL, Durable Objects & WS
 npm run test:browser  # Headless Chrome OPFS persistence across restart + OpfsAhpFS benchmark
 npm run bench:sample  # Fresh-process alternating NodeFS vs SingleFileFS benchmark + HTML report
-npm run bench         # Vitest benchmark suite
-npm run bench:big     # Opt-in 5 GiB two-table join benchmark (needs ~12 GiB free disk)
 ```
 
-Verification receipts and historical CI diagnostics live in [`docs/VALIDATION.md`](docs/VALIDATION.md) and [`docs/benchmarks/README.md`](docs/benchmarks/README.md).
+See [`docs/VALIDATION.md`](docs/VALIDATION.md) and [`docs/benchmarks/README.md`](docs/benchmarks/README.md) for raw receipts and CI diagnostics.
 
 </details>
 
 ---
 
-## Roadmap &amp; License
-
-- **Roadmap:** Align with [PGlite](https://github.com/electric-sql/pglite) so single-file storage is straightforward to adopt or provide upstream ([issue #1](https://github.com/jbsiddall/pglite-singlefile-fs/issues/1)).
-- **Maintenance:** Supervised by Joseph Siddall. Issues and pull requests from humans and AI coding agents are welcome; maintainers vet all changes for correctness, durability, and evidence.
-- **License:** [Apache License 2.0](LICENSE).
+[Roadmap (issue #1)](https://github.com/jbsiddall/pglite-singlefile-fs/issues/1) · Supervised by Joseph Siddall · [Apache License 2.0](LICENSE)

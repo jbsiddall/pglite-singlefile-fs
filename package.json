@@ -71,7 +71,7 @@
     "@electric-sql/pglite": "^0.5.8"
   },
   "devDependencies": {
-    "@electric-sql/pglite": "0.5.17",
+    "@electric-sql/pglite": "0.6.0",
     "@types/node": "^26.6.6",
     "@vitest/ui": "5.1.1",
     "fast-check": "4.10.2",
